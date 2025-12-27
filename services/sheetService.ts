@@ -1,12 +1,14 @@
 /**
  * Pangea Ops - Google Sheets "Database Style" Bridge
  * 
- * ⚠️ CRITICAL SETUP FOR GOOGLE APPS SCRIPT:
- * 1. Open your Sheet: https://docs.google.com/spreadsheets/d/1uzNOkPiBQX0UeK9PvRUPF9kBHX_TzO3swPBWsh2mBjo/
+ * ⚠️ UPDATED SETUP FOR YOUR SPECIFIC COLUMNS:
+ * 1. Open: https://docs.google.com/spreadsheets/d/1uzNOkPiBQX0UeK9PvRUPF9kBHX_TzO3swPBWsh2mBjo/
  * 2. Extensions > Apps Script
- * 3. Paste this code:
+ * 3. REPLACE ALL existing code with this high-performance version:
  * 
  * function doPost(e) {
+ *   var lock = LockService.getScriptLock();
+ *   lock.tryLock(10000); // Wait up to 10s for other syncs to finish
  *   try {
  *     var ss = SpreadsheetApp.getActiveSpreadsheet();
  *     var payload = JSON.parse(e.postData.contents);
@@ -14,18 +16,47 @@
  *     var data = payload.data;
  *     var sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
  *     
+ *     // If sheet is new/empty, write headers from the incoming keys
  *     if (sheet.getLastColumn() == 0) {
  *       var headers = Object.keys(data);
  *       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
  *     }
  *     
  *     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
- *     var newRow = headers.map(function(h) { return data[h] !== undefined ? data[h] : ""; });
- *     sheet.appendRow(newRow);
+ *     
+ *     // UPSERT LOGIC: Check if record ID already exists to update it
+ *     var idIndex = headers.indexOf('id');
+ *     var existingRowIndex = -1;
+ *     if (idIndex !== -1 && data.id) {
+ *       var colValues = sheet.getRange(1, idIndex + 1, sheet.getLastRow()).getValues();
+ *       for (var i = 0; i < colValues.length; i++) {
+ *         if (colValues[i][0] == data.id) {
+ *           existingRowIndex = i + 1;
+ *           break;
+ *         }
+ *       }
+ *     }
+ *     
+ *     // Map data to the correct columns based on Row 1 headers
+ *     var rowData = headers.map(function(h) { 
+ *       var val = data[h];
+ *       if (val === undefined || val === null) return "";
+ *       // Stringify arrays and objects for single-cell storage
+ *       if (typeof val === 'object') return JSON.stringify(val);
+ *       return val; 
+ *     });
+ *     
+ *     if (existingRowIndex !== -1) {
+ *       sheet.getRange(existingRowIndex, 1, 1, rowData.length).setValues([rowData]);
+ *     } else {
+ *       sheet.appendRow(rowData);
+ *     }
  *     
  *     return ContentService.createTextOutput("SUCCESS").setMimeType(ContentService.MimeType.TEXT);
  *   } catch (err) {
  *     return ContentService.createTextOutput("ERROR: " + err.message).setMimeType(ContentService.MimeType.TEXT);
+ *   } finally {
+ *     lock.releaseLock();
  *   }
  * }
  * 
@@ -41,7 +72,16 @@
  *         var headers = values.shift();
  *         result[name] = values.map(function(row) {
  *           var obj = {};
- *           headers.forEach(function(h, i) { obj[h] = row[i]; });
+ *           headers.forEach(function(h, i) { 
+ *             var val = row[i];
+ *             // Attempt to parse JSON strings back into arrays/objects
+ *             try {
+ *               if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
+ *                 val = JSON.parse(val);
+ *               }
+ *             } catch(e) {}
+ *             obj[h] = val; 
+ *           });
  *           return obj;
  *         });
  *       } else { result[name] = []; }
@@ -51,13 +91,9 @@
  *     return ContentService.createTextOutput(JSON.stringify({error: err.message})).setMimeType(ContentService.MimeType.JSON);
  *   }
  * }
- * 
- * 4. Deploy > New Deployment > Web App.
- * 5. EXECUTE AS: "Me"
- * 6. WHO HAS ACCESS: "Anyone"
  */
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwP-sZZLIc0VT-ovjFFxyHsch9Cfl_xty61kQToATHjCD9XJVdakR7wE0mbvopex_2GTw/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyK2c-jGvMxuoimp5nj1m_vfclV5cGY9h28oonObGQyJ46qpxlHmIThfJ5-3Svh6bL5w/exec";
 
 export const syncToSheet = async (sheetName: string, data: any) => {
   if (!SCRIPT_URL) return false;
@@ -65,11 +101,10 @@ export const syncToSheet = async (sheetName: string, data: any) => {
   try {
     const payload = {
       sheet: sheetName,
-      data: { ...data, _syncTime: new Date().toISOString() }
+      data: data
     };
 
-    // 'no-cors' mode is used to avoid preflight (OPTIONS) requests
-    // Google Apps Script doesn't support OPTIONS requests properly for Web Apps.
+    // 'no-cors' is mandatory for Google Apps Script POST requests
     await fetch(SCRIPT_URL, {
       method: 'POST',
       mode: 'no-cors',
@@ -77,9 +112,10 @@ export const syncToSheet = async (sheetName: string, data: any) => {
       body: JSON.stringify(payload)
     });
 
+    console.log(`Synced ${sheetName} to Cloud`);
     return true;
   } catch (error) {
-    console.error("Cloud Push Failed:", error);
+    console.error(`Failed to sync ${sheetName}:`, error);
     return false;
   }
 };
@@ -88,12 +124,12 @@ export const fetchAppData = async () => {
   if (!SCRIPT_URL) return null;
 
   try {
-    // Simple GET with cache-busting and NO custom headers
     const response = await fetch(`${SCRIPT_URL}?cb=${Date.now()}`);
-    if (!response.ok) throw new Error("Network Response Not OK");
-    return await response.json();
+    if (!response.ok) throw new Error("Cloud fetch failed");
+    const data = await response.json();
+    return data;
   } catch (error) {
-    console.warn("Cloud Pull Failed - Using Local Primary Database");
+    console.warn("Cloud pull failed - Using local storage");
     return null;
   }
 };
