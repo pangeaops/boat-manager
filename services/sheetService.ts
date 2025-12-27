@@ -1,10 +1,10 @@
 /**
- * Pangea Ops - Google Sheets & Drive Sync Service
+ * Pangea Ops - Google Sheets "Database Style" Bridge
  * 
- * INSTRUCTIONS FOR GOOGLE APPS SCRIPT:
- * 1. Open your Google Sheet (https://docs.google.com/spreadsheets/d/1uzNOkPiBQX0UeK9PvRUPF9kBHX_TzO3swPBWsh2mBjo/)
- * 2. Go to Extensions > Apps Script
- * 3. Delete any existing code and paste the following:
+ * ⚠️ CRITICAL SETUP FOR GOOGLE APPS SCRIPT:
+ * 1. Open your Sheet: https://docs.google.com/spreadsheets/d/1uzNOkPiBQX0UeK9PvRUPF9kBHX_TzO3swPBWsh2mBjo/
+ * 2. Extensions > Apps Script
+ * 3. Paste this code:
  * 
  * function doPost(e) {
  *   try {
@@ -12,26 +12,20 @@
  *     var payload = JSON.parse(e.postData.contents);
  *     var sheetName = payload.sheet;
  *     var data = payload.data;
+ *     var sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
  *     
- *     var sheet = ss.getSheetByName(sheetName);
- *     if (!sheet) {
- *       sheet = ss.insertSheet(sheetName);
+ *     if (sheet.getLastColumn() == 0) {
  *       var headers = Object.keys(data);
  *       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
  *     }
  *     
  *     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
- *     var newRow = headers.map(function(header) {
- *       return data[header] !== undefined ? data[header] : "";
- *     });
- *     
+ *     var newRow = headers.map(function(h) { return data[h] !== undefined ? data[h] : ""; });
  *     sheet.appendRow(newRow);
  *     
- *     return ContentService.createTextOutput(JSON.stringify({"result":"success"}))
- *       .setMimeType(ContentService.MimeType.JSON);
- *   } catch (error) {
- *     return ContentService.createTextOutput(JSON.stringify({"result":"error", "message": error.toString()}))
- *       .setMimeType(ContentService.MimeType.JSON);
+ *     return ContentService.createTextOutput("SUCCESS").setMimeType(ContentService.MimeType.TEXT);
+ *   } catch (err) {
+ *     return ContentService.createTextOutput("ERROR: " + err.message).setMimeType(ContentService.MimeType.TEXT);
  *   }
  * }
  * 
@@ -42,83 +36,64 @@
  *     var result = {};
  *     sheets.forEach(function(s) {
  *       var name = s.getName();
- *       var data = s.getDataRange().getValues();
- *       if (data.length > 1) {
- *         var headers = data.shift();
- *         result[name] = data.map(function(row) {
+ *       var values = s.getDataRange().getValues();
+ *       if (values.length > 1) {
+ *         var headers = values.shift();
+ *         result[name] = values.map(function(row) {
  *           var obj = {};
  *           headers.forEach(function(h, i) { obj[h] = row[i]; });
  *           return obj;
  *         });
- *       } else {
- *         result[name] = [];
- *       }
+ *       } else { result[name] = []; }
  *     });
- *     return ContentService.createTextOutput(JSON.stringify(result))
- *       .setMimeType(ContentService.MimeType.JSON);
- *   } catch (error) {
- *     return ContentService.createTextOutput(JSON.stringify({"error": error.toString()}))
- *       .setMimeType(ContentService.MimeType.JSON);
+ *     return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+ *   } catch (err) {
+ *     return ContentService.createTextOutput(JSON.stringify({error: err.message})).setMimeType(ContentService.MimeType.JSON);
  *   }
  * }
  * 
- * 4. Click "Deploy" > "New Deployment"
- * 5. Select type: "Web App"
- * 6. Set "Execute as" to: "Me"
- * 7. Set "Who has access" to: "Anyone"
- * 8. Copy the Web App URL and update SCRIPT_URL below.
+ * 4. Deploy > New Deployment > Web App.
+ * 5. EXECUTE AS: "Me"
+ * 6. WHO HAS ACCESS: "Anyone"
  */
 
-const SCRIPT_URL = "https://script.google.com/a/macros/pangeabocas.com/s/AKfycbwqakvxIfM9IgTRMSouIls67OYRYRQHTqCqs4NrKqNcmdxycb4KUZSSJ0e3Hfdd6SBhtA/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwP-sZZLIc0VT-ovjFFxyHsch9Cfl_xty61kQToATHjCD9XJVdakR7wE0mbvopex_2GTw/exec";
 
 export const syncToSheet = async (sheetName: string, data: any) => {
-  if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_URL")) return false;
+  if (!SCRIPT_URL) return false;
 
   try {
     const payload = {
       sheet: sheetName,
-      timestamp: new Date().toISOString(),
-      data: { ...data, _clientSource: 'PangeaOps-Web' }
+      data: { ...data, _syncTime: new Date().toISOString() }
     };
 
-    /**
-     * Using 'no-cors' and 'text/plain' to bypass CORS preflight.
-     * Google Apps Script does not support OPTIONS requests.
-     */
+    // 'no-cors' mode is used to avoid preflight (OPTIONS) requests
+    // Google Apps Script doesn't support OPTIONS requests properly for Web Apps.
     await fetch(SCRIPT_URL, {
       method: 'POST',
-      mode: 'no-cors', 
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
     });
 
-    console.log(`📡 Log Synced: [${sheetName}]`);
     return true;
   } catch (error) {
-    console.error(`❌ Sync Failed [${sheetName}]:`, error);
+    console.error("Cloud Push Failed:", error);
     return false;
   }
 };
 
 export const fetchAppData = async () => {
-  if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_URL")) return null;
+  if (!SCRIPT_URL) return null;
 
   try {
-    /**
-     * Simple GET request without custom headers to avoid CORS preflight.
-     */
-    const response = await fetch(`${SCRIPT_URL}?t=${Date.now()}`, {
-      method: 'GET'
-    });
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    
-    const remoteData = await response.json();
-    console.log("📥 Cloud Data Pulled Successfully");
-    return remoteData;
+    // Simple GET with cache-busting and NO custom headers
+    const response = await fetch(`${SCRIPT_URL}?cb=${Date.now()}`);
+    if (!response.ok) throw new Error("Network Response Not OK");
+    return await response.json();
   } catch (error) {
-    console.warn("📥 Cloud pull failed. Ensure the Web App is deployed with 'Anyone' access.");
-    console.error(error);
+    console.warn("Cloud Pull Failed - Using Local Primary Database");
     return null;
   }
 };

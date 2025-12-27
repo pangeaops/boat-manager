@@ -25,6 +25,7 @@ const App: React.FC = () => {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<'online' | 'offline' | 'pending'>('pending');
   
   const isFetchingRef = useRef(false);
 
@@ -48,34 +49,31 @@ const App: React.FC = () => {
     
     try {
       const remoteData = await fetchAppData();
-      if (remoteData) {
+      if (remoteData && !remoteData.error) {
         setData(prev => {
-          // Normalize names: App uses keys like Boats/AuditLogs based on sheet names
           const remoteBoats = remoteData.Boats || remoteData.boats;
           const remoteTours = remoteData.Tours || remoteData.tours;
           const remotePersonnel = remoteData.Personnel || remoteData.personnel;
           const remoteInventory = remoteData.Inventory || remoteData.inventory;
           const remoteLogs = remoteData.AuditLogs || remoteData.logs;
 
-          const combinedLogs = [...(remoteLogs || []), ...prev.logs];
-          const uniqueLogs = Array.from(new Map(combinedLogs.map(item => [item.id, item])).values())
-            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-            .slice(0, 100);
-
+          // Merge strategy: Cloud data overrides if it exists
           return {
             ...prev,
-            boats: remoteBoats || prev.boats,
-            tours: remoteTours || prev.tours,
-            personnel: remotePersonnel || prev.personnel,
-            inventory: remoteInventory || prev.inventory,
-            logs: uniqueLogs as AuditLog[]
+            boats: remoteBoats && remoteBoats.length > 0 ? remoteBoats : prev.boats,
+            tours: remoteTours && remoteTours.length > 0 ? remoteTours : prev.tours,
+            personnel: remotePersonnel && remotePersonnel.length > 0 ? remotePersonnel : prev.personnel,
+            inventory: remoteInventory && remoteInventory.length > 0 ? remoteInventory : prev.inventory,
+            logs: remoteLogs || prev.logs
           };
         });
         setLastSync(new Date());
+        setCloudStatus('online');
+      } else {
+        setCloudStatus('offline');
       }
     } catch (err) {
-      // Silently fail for background updates to avoid annoying the user
-      if (showIndicator) console.error("Cloud background sync failed:", err);
+      setCloudStatus('offline');
     } finally {
       isFetchingRef.current = false;
       if (showIndicator) setIsSyncing(false);
@@ -85,9 +83,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (currentUser) {
       refreshData(true);
-      const interval = setInterval(() => {
-        refreshData(false);
-      }, 30000); // Check every 30 seconds
+      const interval = setInterval(() => refreshData(false), 60000); // Sync every minute
       return () => clearInterval(interval);
     }
   }, [currentUser, refreshData]);
@@ -97,14 +93,9 @@ const App: React.FC = () => {
   }, [data]);
 
   const createLog = (action: string, details: string, category: AuditLog['category']) => {
-    const timestamp = new Date().toISOString();
-    const id = Math.random().toString(36).substr(2, 9);
-    const userName = currentUser?.name || 'System';
-
-    const newLogEntry = { id, timestamp, action, details, category, user: userName };
-    
-    setData(prev => ({ ...prev, logs: [newLogEntry as AuditLog, ...prev.logs].slice(0, 100) }));
-    syncToSheet('AuditLogs', newLogEntry);
+    const newLog = { id: Math.random().toString(36).substr(2, 9), timestamp: new Date().toISOString(), action, details, category, user: currentUser?.name };
+    setData(prev => ({ ...prev, logs: [newLog as AuditLog, ...prev.logs].slice(0, 100) }));
+    syncToSheet('AuditLogs', newLog);
   };
 
   const handleUpdateBoatStatus = (boatId: string, status: BoatStatus) => {
@@ -112,113 +103,76 @@ const App: React.FC = () => {
       const boat = prev.boats.find(b => b.id === boatId);
       if (!boat) return prev;
       const updatedBoat = { ...boat, status };
-      createLog('Boat Status Changed', `${boat.name} set to ${status}.`, 'Fleet');
       syncToSheet('Boats', updatedBoat);
+      createLog('Boat Status Changed', `${boat.name} set to ${status}.`, 'Fleet');
       return { ...prev, boats: prev.boats.map(b => b.id === boatId ? updatedBoat : b) };
     });
   };
 
-  const addBoat = (boat: Boat) => {
-    setData(prev => {
-      const exists = prev.boats.find(b => b.id === boat.id);
-      syncToSheet('Boats', boat);
-      if (exists) {
-        createLog('Vessel Updated', `${boat.name} modified.`, 'Fleet');
-        return { ...prev, boats: prev.boats.map(b => b.id === boat.id ? boat : b) };
-      }
-      createLog('New Boat Added', `${boat.name} registered.`, 'Fleet');
-      return { ...prev, boats: [...prev.boats, boat] };
-    });
-    setEditingBoat(null);
-    setActiveTab('fleet');
+  const handleExportData = () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pangea_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
   };
 
-  const addPersonnel = (person: Personnel) => {
-    setData(prev => ({ ...prev, personnel: [...prev.personnel, person] }));
-    createLog('Personnel Added', `${person.name} onboarded.`, 'Personnel');
-    syncToSheet('Personnel', person);
-    setActiveTab('personnel_hub');
-  };
-
-  const updatePersonnel = (person: Personnel) => {
-    setData(prev => ({ ...prev, personnel: prev.personnel.map(p => p.id === person.id ? person : p) }));
-    createLog('Personnel Updated', `${person.name} profile modified.`, 'Personnel');
-    syncToSheet('Personnel', person);
-  };
-
-  const addTour = (tour: Tour) => {
-    setData(prev => ({ ...prev, tours: [...prev.tours, tour] }));
-    createLog('Tour Dispatched', `${tour.route} started.`, 'Tour');
-    syncToSheet('Tours', tour);
-  };
-
-  const updateTour = (tourId: string, updates: Partial<Tour>) => {
-    setData(prev => {
-      const tour = prev.tours.find(t => t.id === tourId);
-      if (!tour) return prev;
-      const updatedTour = { ...tour, ...updates };
-      syncToSheet('Tours', updatedTour);
-      return { ...prev, tours: prev.tours.map(t => t.id === tourId ? updatedTour : t) };
-    });
-  };
-
-  const updateInventory = (item: InventoryItem) => {
-    setData(prev => {
-      const exists = prev.inventory.find(i => i.id === item.id);
-      syncToSheet('Inventory', item);
-      if (exists) return { ...prev, inventory: prev.inventory.map(i => i.id === item.id ? item : i) };
-      return { ...prev, inventory: [...prev.inventory, item] };
-    });
-  };
-
-  const handleSendFullDailyReport = async () => {
-    setIsGeneratingReport(true);
-    try {
-      const summary = await generateDailyOperationalSummary(data);
-      if (!summary) throw new Error("The AI service returned no data.");
-      
-      const doc = new jsPDF();
-      const splitText = doc.splitTextToSize(summary, 170);
-      let y = 30;
-      doc.setFontSize(16);
-      doc.text("Pangea Bocas Daily Operational Report", 20, 20);
-      doc.setFontSize(10);
-      splitText.forEach((line: string) => {
-        if (y > 280) { doc.addPage(); y = 20; }
-        doc.text(line, 20, y);
-        y += 7;
-      });
-      doc.save(`Pangea_Ops_${new Date().toISOString().split('T')[0]}.pdf`);
-      createLog('Full Report Exported', 'Operational PDF generated.', 'Tour');
-    } catch (err: any) { 
-      console.error("Report Generation Error:", err);
-      alert(`Failed to generate report: ${err.message || "Unknown error"}`); 
-    } finally { 
-      setIsGeneratingReport(false); 
+  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const imported = JSON.parse(event.target?.result as string);
+          if (confirm("Replace entire local database with this backup?")) {
+            setData(imported);
+            alert("Database Restoration Successful.");
+          }
+        } catch (err) { alert("Invalid backup file."); }
+      };
+      reader.readAsText(file);
     }
   };
 
   if (!currentUser) return <Login onLogin={(user) => setCurrentUser(user)} />;
 
   const renderContent = () => {
-    if (editingBoat) return <AddBoatForm initialData={editingBoat} onAddBoat={addBoat} onCancel={() => setEditingBoat(null)} />;
+    if (editingBoat) return <AddBoatForm initialData={editingBoat} onAddBoat={(b) => { 
+      setData(prev => ({...prev, boats: prev.boats.map(x => x.id === b.id ? b : x)}));
+      syncToSheet('Boats', b);
+      setEditingBoat(null);
+    }} onCancel={() => setEditingBoat(null)} />;
+    
     switch (activeTab) {
-      case 'dashboard': return <Dashboard data={data} onSendFullDailyReport={handleSendFullDailyReport} onManualSync={() => refreshData(true)} />;
+      case 'dashboard': return <Dashboard data={data} onSendFullDailyReport={() => {}} onManualSync={() => refreshData(true)} />;
       case 'fleet': return <BoatDashboard data={data} userRole={currentUser.role} onUpdateTaskStatus={() => {}} onEditBoat={setEditingBoat} onUpdateBoatStatus={handleUpdateBoatStatus} />;
-      case 'tours': return <TourLogForm data={data} onAddTour={addTour} onUpdateTour={updateTour} />;
-      case 'inventory': return <InventoryDashboard data={data} onUpdateInventory={updateInventory} />;
-      case 'personnel_hub': return <PersonnelDashboard data={data} userRole={currentUser.role} onUpdatePersonnel={updatePersonnel} />;
-      case 'maintenance': return <MaintenanceForm data={data} onAddTask={() => {}} onSendReport={() => {}} onUpdateStatus={() => {}} />;
+      case 'add_forms': return (
+        <div className="space-y-12">
+          <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
+            <h3 className="text-xl font-black">Database Administration</h3>
+            <div className="flex gap-4">
+              <button onClick={handleExportData} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-black text-xs uppercase tracking-widest">Download Full Backup (JSON)</button>
+              <label className="px-6 py-3 bg-slate-100 text-slate-800 rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer hover:bg-slate-200 transition-colors">
+                Restore Database
+                <input type="file" className="hidden" onChange={handleImportData} accept=".json" />
+              </label>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+            <AddBoatForm onAddBoat={(b) => { setData(prev => ({...prev, boats: [...prev.boats, b]})); syncToSheet('Boats', b); setActiveTab('fleet'); }} />
+            <AddPersonnelForm onAddPersonnel={(p) => { setData(prev => ({...prev, personnel: [...prev.personnel, p]})); syncToSheet('Personnel', p); setActiveTab('personnel_hub'); }} />
+          </div>
+        </div>
+      );
+      case 'tours': return <TourLogForm data={data} onAddTour={(t) => { setData(prev => ({...prev, tours: [...prev.tours, t]})); syncToSheet('Tours', t); }} onUpdateTour={(id, u) => { setData(prev => ({...prev, tours: prev.tours.map(t => t.id === id ? {...t, ...u} : t)})); syncToSheet('Tours', {id, ...u}); }} />;
+      case 'inventory': return <InventoryDashboard data={data} onUpdateInventory={(i) => { setData(prev => ({...prev, inventory: prev.inventory.find(x => x.id === i.id) ? prev.inventory.map(x => x.id === i.id ? i : x) : [...prev.inventory, i]})); syncToSheet('Inventory', i); }} />;
+      case 'personnel_hub': return <PersonnelDashboard data={data} userRole={currentUser.role} onUpdatePersonnel={(p) => { setData(prev => ({...prev, personnel: prev.personnel.map(x => x.id === p.id ? p : x)})); syncToSheet('Personnel', p); }} />;
+      case 'maintenance': return <MaintenanceForm data={data} onAddTask={(t) => { setData(prev => ({...prev, tasks: [...prev.tasks, t]})); syncToSheet('Tasks', t); }} onSendReport={() => {}} onUpdateStatus={(id, s) => { setData(prev => ({...prev, tasks: prev.tasks.map(t => t.id === id ? {...t, status: s} : t)})); syncToSheet('Tasks', {id, status: s}); }} />;
       case 'protocols': return <Protocols />;
       case 'admin_dashboard': return <AdminDashboard data={data} />;
       case 'logs': return <LogSection logs={data.logs} />;
-      case 'add_forms': return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-          {currentUser.role === 'Admin' ? <AddBoatForm onAddBoat={addBoat} /> : <div>Admin access required.</div>}
-          {currentUser.role === 'Admin' ? <AddPersonnelForm onAddPersonnel={addPersonnel} /> : <div>Admin access required.</div>}
-        </div>
-      );
-      default: return <Dashboard data={data} onSendFullDailyReport={handleSendFullDailyReport} onManualSync={() => refreshData(true)} />;
+      default: return <Dashboard data={data} onSendFullDailyReport={() => {}} onManualSync={() => refreshData(true)} />;
     }
   };
 
@@ -230,13 +184,13 @@ const App: React.FC = () => {
       onLogout={() => setCurrentUser(null)}
       isSyncing={isSyncing}
       lastSync={lastSync}
+      cloudStatus={cloudStatus}
     >
       {isGeneratingReport && (
         <div className="fixed inset-0 bg-white/60 backdrop-blur-md z-50 flex items-center justify-center">
           <div className="bg-white p-12 rounded-[3rem] shadow-2xl border border-slate-100 text-center space-y-4">
             <div className="w-12 h-12 border-4 border-[#ffb519] border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="font-black">Compiling Pangea Fleet Data...</p>
-            <p className="text-xs text-slate-400">Consulting Gemini Intelligence</p>
+            <p className="font-black">Generating Report...</p>
           </div>
         </div>
       )}

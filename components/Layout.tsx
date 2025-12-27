@@ -10,6 +10,7 @@ interface LayoutProps {
   onLogout: () => void;
   isSyncing?: boolean;
   lastSync?: Date | null;
+  cloudStatus?: 'online' | 'offline' | 'pending';
 }
 
 const Layout: React.FC<LayoutProps> = ({ 
@@ -19,7 +20,8 @@ const Layout: React.FC<LayoutProps> = ({
   user, 
   onLogout,
   isSyncing,
-  lastSync
+  lastSync,
+  cloudStatus = 'pending'
 }) => {
   const allNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊', minRole: 'Staff' },
@@ -31,7 +33,7 @@ const Layout: React.FC<LayoutProps> = ({
     { id: 'maintenance', label: 'Maintenance', icon: '🔧', minRole: 'Staff' },
     { id: 'protocols', label: 'Safety & Eco', icon: '🛡️', minRole: 'Staff' },
     { id: 'logs', label: 'Ops Log', icon: '📜', minRole: 'Staff' },
-    { id: 'add_forms', label: 'Admin Console', icon: '🛠️', minRole: 'Admin' },
+    { id: 'add_forms', label: 'Database & HR', icon: '⚙️', minRole: 'Admin' },
   ];
 
   const filteredNavItems = allNavItems.filter(item => 
@@ -46,7 +48,7 @@ const Layout: React.FC<LayoutProps> = ({
              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black" style={{ backgroundColor: PANGEA_YELLOW }}>P</div>
              <div>
                <h1 className="text-xl font-black tracking-tighter" style={{ color: PANGEA_DARK }}>PANGEA<span style={{ color: PANGEA_YELLOW }}>OPS</span></h1>
-               <p className="text-[9px] uppercase tracking-widest text-slate-400 font-bold">Fleet Management</p>
+               <p className="text-[9px] uppercase tracking-widest text-slate-400 font-bold">Fleet Command</p>
              </div>
           </div>
         </div>
@@ -60,12 +62,14 @@ const Layout: React.FC<LayoutProps> = ({
              </div>
            </div>
 
-           {/* Cloud Sync Status Indicator */}
            <div className="flex items-center justify-between px-2">
              <div className="flex items-center space-x-2">
-               <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-green-500'}`}></div>
+               <div className={`w-2 h-2 rounded-full ${
+                 cloudStatus === 'online' ? 'bg-green-500' : 
+                 cloudStatus === 'offline' ? 'bg-red-500' : 'bg-amber-400 animate-pulse'
+               }`}></div>
                <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest">
-                 {isSyncing ? 'Syncing...' : 'Cloud Connected'}
+                 {cloudStatus === 'online' ? 'Cloud Live' : cloudStatus === 'offline' ? 'Local Only' : 'Connecting...'}
                </span>
              </div>
              {lastSync && (
