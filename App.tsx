@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppData, Boat, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem } from './types.ts';
 import Layout from './components/Layout.tsx';
@@ -16,7 +17,7 @@ import InventoryDashboard from './components/InventoryDashboard.tsx';
 import { INITIAL_DATA_KEY, FULL_FLEET, INITIAL_PERSONNEL } from './constants.ts';
 import { generateDailyOperationalSummary } from './services/geminiService.ts';
 import { syncToSheet, fetchAppData } from './services/sheetService.ts';
-import { jsPDF } from 'jspdf';
+import { generateLogPDF, sendEmailReport } from './services/reportService.ts';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
@@ -57,7 +58,6 @@ const App: React.FC = () => {
           const remoteInventory = remoteData.Inventory || remoteData.inventory;
           const remoteLogs = remoteData.AuditLogs || remoteData.logs;
 
-          // Merge strategy: Cloud data overrides if it exists
           return {
             ...prev,
             boats: remoteBoats && remoteBoats.length > 0 ? remoteBoats : prev.boats,
@@ -83,7 +83,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (currentUser) {
       refreshData(true);
-      const interval = setInterval(() => refreshData(false), 60000); // Sync every minute
+      const interval = setInterval(() => refreshData(false), 60000);
       return () => clearInterval(interval);
     }
   }, [currentUser, refreshData]);
@@ -96,6 +96,37 @@ const App: React.FC = () => {
     const newLog = { id: Math.random().toString(36).substr(2, 9), timestamp: new Date().toISOString(), action, details, category, user: currentUser?.name };
     setData(prev => ({ ...prev, logs: [newLog as AuditLog, ...prev.logs].slice(0, 100) }));
     syncToSheet('AuditLogs', newLog);
+  };
+
+  const handleFullDailyReport = async () => {
+    setIsGeneratingReport(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const todayTours = data.tours.filter(t => t.date === today);
+      
+      // Fallback if AI fails
+      let summary = "Pangea Operations Daily Summary - Automated Generated Report.\n\n";
+      try {
+        summary = await generateDailyOperationalSummary(data);
+      } catch (aiError) {
+        console.warn("AI summary generation failed, using standard format.");
+      }
+      
+      const pdf = generateLogPDF(data.logs.filter(l => l.timestamp.includes(today)));
+      pdf.save(`Pangea_Daily_Full_Report_${today}.pdf`);
+      
+      const emailBody = `DAILY OPERATIONAL SUMMARY - PANGEA BOCAS\n\nDate: ${new Date().toDateString()}\n\nSummary:\n${summary}\n\nTrips Dispatched Today: ${todayTours.length}\nActive Fleet: ${data.boats.length}\n\nNote: The full PDF Audit Log has been downloaded and should be attached manually for full documentation.`;
+      
+      sendEmailReport(`Daily Operations Report - ${new Date().toDateString()}`, emailBody);
+      
+      createLog('Report Dispatched', 'Daily Full Operational Report triggered.', 'Fleet');
+      alert("Report PDF generated and email draft opened.");
+    } catch (error) {
+      console.error("Full report failed:", error);
+      alert("Report generation failed. Check connection.");
+    } finally {
+      setIsGeneratingReport(false);
+    }
   };
 
   const handleUpdateBoatStatus = (boatId: string, status: BoatStatus) => {
@@ -145,7 +176,7 @@ const App: React.FC = () => {
     }} onCancel={() => setEditingBoat(null)} />;
     
     switch (activeTab) {
-      case 'dashboard': return <Dashboard data={data} onSendFullDailyReport={() => {}} onManualSync={() => refreshData(true)} />;
+      case 'dashboard': return <Dashboard data={data} onSendFullDailyReport={handleFullDailyReport} onManualSync={() => refreshData(true)} />;
       case 'fleet': return <BoatDashboard data={data} userRole={currentUser.role} onUpdateTaskStatus={() => {}} onEditBoat={setEditingBoat} onUpdateBoatStatus={handleUpdateBoatStatus} />;
       case 'add_forms': return (
         <div className="space-y-12">
@@ -172,7 +203,7 @@ const App: React.FC = () => {
       case 'protocols': return <Protocols />;
       case 'admin_dashboard': return <AdminDashboard data={data} />;
       case 'logs': return <LogSection logs={data.logs} />;
-      default: return <Dashboard data={data} onSendFullDailyReport={() => {}} onManualSync={() => refreshData(true)} />;
+      default: return <Dashboard data={data} onSendFullDailyReport={handleFullDailyReport} onManualSync={() => refreshData(true)} />;
     }
   };
 
@@ -190,7 +221,8 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-white/60 backdrop-blur-md z-50 flex items-center justify-center">
           <div className="bg-white p-12 rounded-[3rem] shadow-2xl border border-slate-100 text-center space-y-4">
             <div className="w-12 h-12 border-4 border-[#ffb519] border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="font-black">Generating Report...</p>
+            <p className="font-black">Compiling Operations Summary...</p>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Please do not refresh</p>
           </div>
         </div>
       )}
