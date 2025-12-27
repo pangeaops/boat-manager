@@ -1,0 +1,7 @@
+{
+  "name": "Pangea Bocas Fleet Operations",
+  "description": "A comprehensive fleet management system for Pangea Bocas featuring maintenance tracking, boat specifications, and personnel management.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

@@ -1,0 +1,181 @@
+import React, { useState, useEffect } from 'react';
+import { AppData, Boat, Task, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem } from './types.ts';
+import Layout from './components/Layout.tsx';
+import Dashboard from './components/Dashboard.tsx';
+import BoatDashboard from './components/BoatDashboard.tsx';
+import MaintenanceForm from './components/MaintenanceForm.tsx';
+import AddBoatForm from './components/AddBoatForm.tsx';
+import AddPersonnelForm from './components/AddPersonnelForm.tsx';
+import PersonnelDashboard from './components/PersonnelDashboard.tsx';
+import LogSection from './components/LogSection.tsx';
+import Protocols from './components/Protocols.tsx';
+import TourLogForm from './components/TourLogForm.tsx';
+import Login from './components/Login.tsx';
+import AdminDashboard from './components/AdminDashboard.tsx';
+import InventoryDashboard from './components/InventoryDashboard.tsx';
+import { INITIAL_DATA_KEY, FULL_FLEET, INITIAL_PERSONNEL } from './constants.ts';
+import { generateDailyOperationalSummary } from './services/geminiService.ts';
+import { syncToSheet, fetchAppData } from './services/sheetService.ts';
+import { jsPDF } from 'jspdf';
+
+const App: React.FC = () => {
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [editingBoat, setEditingBoat] = useState<Boat | null>(null);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  
+  const [data, setData] = useState<AppData>(() => {
+    const saved = localStorage.getItem(INITIAL_DATA_KEY);
+    return saved ? JSON.parse(saved) : { 
+      boats: FULL_FLEET, 
+      tasks: [], 
+      personnel: INITIAL_PERSONNEL,
+      tours: [],
+      inventory: [],
+      logs: []
+    };
+  });
+
+  useEffect(() => {
+    if (currentUser) {
+      const loadRemote = async () => {
+        const remoteData = await fetchAppData();
+        if (remoteData) {
+          setData(prev => ({ ...prev, ...remoteData }));
+        }
+      };
+      loadRemote();
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    localStorage.setItem(INITIAL_DATA_KEY, JSON.stringify(data));
+  }, [data]);
+
+  const createLog = (action: string, details: string, category: AuditLog['category']) => {
+    const newLog: AuditLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString(),
+      action,
+      details,
+      category
+    };
+    setData(prev => ({ ...prev, logs: [...prev.logs, newLog] }));
+    syncToSheet('AuditLogs', { ...newLog, user: currentUser?.name || 'System' });
+  };
+
+  const handleUpdateBoatStatus = (boatId: string, status: BoatStatus) => {
+    setData(prev => {
+      const boat = prev.boats.find(b => b.id === boatId);
+      if (!boat) return prev;
+      const updatedBoat = { ...boat, status };
+      createLog('Boat Status Changed', `${boat.name} set to ${status}.`, 'Fleet');
+      syncToSheet('Boats', updatedBoat);
+      return { ...prev, boats: prev.boats.map(b => b.id === boatId ? updatedBoat : b) };
+    });
+  };
+
+  const addBoat = (boat: Boat) => {
+    setData(prev => {
+      const exists = prev.boats.find(b => b.id === boat.id);
+      syncToSheet('Boats', boat);
+      if (exists) {
+        createLog('Vessel Updated', `${boat.name} modified.`, 'Fleet');
+        return { ...prev, boats: prev.boats.map(b => b.id === boat.id ? boat : b) };
+      }
+      createLog('New Boat Added', `${boat.name} registered.`, 'Fleet');
+      return { ...prev, boats: [...prev.boats, boat] };
+    });
+    setEditingBoat(null);
+    setActiveTab('fleet');
+  };
+
+  const addPersonnel = (person: Personnel) => {
+    setData(prev => ({ ...prev, personnel: [...prev.personnel, person] }));
+    createLog('Personnel Added', `${person.name} onboarded.`, 'Personnel');
+    syncToSheet('Personnel', person);
+    setActiveTab('personnel_hub');
+  };
+
+  const updatePersonnel = (person: Personnel) => {
+    setData(prev => ({ ...prev, personnel: prev.personnel.map(p => p.id === person.id ? person : p) }));
+    createLog('Personnel Updated', `${person.name} profile modified.`, 'Personnel');
+    syncToSheet('Personnel', person);
+  };
+
+  const addTour = (tour: Tour) => {
+    setData(prev => ({ ...prev, tours: [...prev.tours, tour] }));
+    createLog('Tour Dispatched', `${tour.route} started.`, 'Tour');
+    syncToSheet('Tours', tour);
+  };
+
+  const updateTour = (tourId: string, updates: Partial<Tour>) => {
+    setData(prev => {
+      const tour = prev.tours.find(t => t.id === tourId);
+      if (!tour) return prev;
+      const updatedTour = { ...tour, ...updates };
+      syncToSheet('Tours', updatedTour);
+      return { ...prev, tours: prev.tours.map(t => t.id === tourId ? updatedTour : t) };
+    });
+  };
+
+  const updateInventory = (item: InventoryItem) => {
+    setData(prev => {
+      const exists = prev.inventory.find(i => i.id === item.id);
+      syncToSheet('Inventory', item);
+      if (exists) return { ...prev, inventory: prev.inventory.map(i => i.id === item.id ? item : i) };
+      return { ...prev, inventory: [...prev.inventory, item] };
+    });
+  };
+
+  const handleSendFullDailyReport = async () => {
+    setIsGeneratingReport(true);
+    try {
+      const summary = await generateDailyOperationalSummary(data);
+      if (!summary) throw new Error();
+      const doc = new jsPDF();
+      doc.text(doc.splitTextToSize(summary, 170), 20, 30);
+      doc.save(`Pangea_Ops_${new Date().toISOString().split('T')[0]}.pdf`);
+      createLog('Full Report Exported', 'Operational PDF generated.', 'Tour');
+    } catch (err) { alert("Failed to generate report."); } finally { setIsGeneratingReport(false); }
+  };
+
+  if (!currentUser) return <Login onLogin={(user) => setCurrentUser(user)} />;
+
+  const renderContent = () => {
+    if (editingBoat) return <AddBoatForm initialData={editingBoat} onAddBoat={addBoat} onCancel={() => setEditingBoat(null)} />;
+    switch (activeTab) {
+      case 'dashboard': return <Dashboard data={data} onSendFullDailyReport={handleSendFullDailyReport} />;
+      case 'fleet': return <BoatDashboard data={data} userRole={currentUser.role} onUpdateTaskStatus={() => {}} onEditBoat={setEditingBoat} onUpdateBoatStatus={handleUpdateBoatStatus} />;
+      case 'tours': return <TourLogForm data={data} onAddTour={addTour} onUpdateTour={updateTour} />;
+      case 'inventory': return <InventoryDashboard data={data} onUpdateInventory={updateInventory} />;
+      case 'personnel_hub': return <PersonnelDashboard data={data} userRole={currentUser.role} onUpdatePersonnel={updatePersonnel} />;
+      case 'maintenance': return <MaintenanceForm data={data} onAddTask={() => {}} onSendReport={() => {}} onUpdateStatus={() => {}} />;
+      case 'admin_dashboard': return <AdminDashboard data={data} />;
+      case 'logs': return <LogSection logs={data.logs} />;
+      case 'add_forms': return (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+          {currentUser.role === 'Admin' ? <AddBoatForm onAddBoat={addBoat} /> : <div>Admin access required.</div>}
+          {currentUser.role === 'Admin' ? <AddPersonnelForm onAddPersonnel={addPersonnel} /> : <div>Admin access required.</div>}
+        </div>
+      );
+      default: return <Dashboard data={data} onSendFullDailyReport={handleSendFullDailyReport} />;
+    }
+  };
+
+  return (
+    <Layout activeTab={activeTab} setActiveTab={setActiveTab} user={currentUser} onLogout={() => setCurrentUser(null)}>
+      {isGeneratingReport && (
+        <div className="fixed inset-0 bg-white/60 backdrop-blur-md z-50 flex items-center justify-center">
+          <div className="bg-white p-12 rounded-[3rem] shadow-2xl border border-slate-100 text-center space-y-4">
+            <div className="w-12 h-12 border-4 border-[#ffb519] border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="font-black">Compiling Pangea Fleet Data...</p>
+          </div>
+        </div>
+      )}
+      {renderContent()}
+    </Layout>
+  );
+};
+
+export default App;
