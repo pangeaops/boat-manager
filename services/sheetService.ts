@@ -1,82 +1,54 @@
 /**
  * Pangea Ops - Google Sheets & Drive Sync Service
  * 
- * Live connection established to: Pangea Bocas Apps Script Bridge
+ * Optimized for Production (Netlify) + Google Apps Script
  */
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyK2c-jGvMxuoimp5nj1m_vfclV5cGY9h28oonObGQyJ46qpxlHmIThfJ5-3Svh6bL5w/exec";
 
+// Mapping dictionary to translate Sheet Names to App State Keys
+export const SHEET_MAP: Record<string, string> = {
+  "Boats": "boats",
+  "Personnel Info": "personnel",
+  "Tours": "tours",
+  "Inventory": "inventory",
+  "AuditLogs": "logs",
+  "Tasks": "tasks"
+};
+
 export const syncToSheet = async (sheetName: string, data: any) => {
   if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_GOOGLE_APPS_SCRIPT_URL_HERE")) {
-    console.warn(`Sync [${sheetName}] skipped: Bridge URL not configured.`);
+    console.warn(`[Sync] Skipped ${sheetName}: No Bridge URL.`);
     return false;
   }
 
   try {
-    // 1. Deep clean data: remove undefined values and serialize nested objects
-    // This reduces payload size and avoids "undefined" string values in Sheets
-    const cleanData = (obj: any): any => {
-      const result: any = {};
-      Object.keys(obj).forEach(key => {
-        const value = obj[key];
-        if (value === undefined || value === null) return;
-        
-        if (Array.isArray(value)) {
-          result[key] = JSON.stringify(value);
-        } else if (typeof value === 'object') {
-          result[key] = JSON.stringify(value);
-        } else {
-          result[key] = value;
-        }
-      });
-      return result;
-    };
-
-    const sanitizedData = cleanData(data);
-
+    // 1. Prepare Payload
     const payload = {
       method: "update",
       sheet: sheetName,
       data: {
-        ...sanitizedData,
+        ...data,
         _lastUpdated: new Date().toISOString(),
-        _clientSource: 'PangeaOps-Netlify'
+        _syncToken: Math.random().toString(36).substr(2, 9)
       }
     };
 
-    const jsonPayload = JSON.stringify(payload);
-    const payloadSize = new Blob([jsonPayload]).size;
-
-    console.info(`[PangeaCloud] Dispatching ${sheetName} update... (${(payloadSize / 1024).toFixed(2)} KB)`);
-
-    if (payloadSize > 5 * 1024 * 1024) {
-      console.warn("[PangeaCloud] Warning: Payload size is large. Base64 images may cause timeouts in Google Apps Script.");
-    }
-
-    /**
-     * CRITICAL: We use 'no-cors' mode with 'text/plain'.
-     * This makes the request a "Simple Request" according to CORS spec.
-     * Netlify (Production) environment strictly enforces CORS. 
-     * Google Apps Script does not return correct CORS headers for preflight OPTIONS.
-     * Using 'no-cors' allows the POST to hit the script without an OPTIONS check.
-     */
-    await fetch(SCRIPT_URL, {
+    // 2. Dispatch using Opaque mode (CORS-safe for Netlify)
+    // We use text/plain to trigger a "Simple Request" which bypasses CORS preflight
+    await fetch(`${SCRIPT_URL}?t=${Date.now()}`, {
       method: 'POST',
       mode: 'no-cors', 
       cache: 'no-cache',
       credentials: 'omit',
-      headers: { 
-        'Content-Type': 'text/plain' 
-      },
-      body: jsonPayload,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload),
     });
 
-    // Note: With 'no-cors', we cannot read the response body or status.
-    // We assume success if the fetch promise resolves without throwing.
-    console.log(`[PangeaCloud] Sync command accepted for [${sheetName}]`);
+    console.log(`[Sync] Outbound to "${sheetName}" successful.`);
     return true;
   } catch (error) {
-    console.error(`[PangeaCloud] Sync failed for [${sheetName}]:`, error);
+    console.error(`[Sync] Outbound Failure for "${sheetName}":`, error);
     return false;
   }
 };
@@ -85,7 +57,7 @@ export const fetchAppData = async () => {
   if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_GOOGLE_APPS_SCRIPT_URL_HERE")) return null;
 
   try {
-    const response = await fetch(`${SCRIPT_URL}?t=${Date.now()}`, {
+    const response = await fetch(`${SCRIPT_URL}?t=${Date.now()}&cb=${Math.random()}`, {
       method: 'GET',
       mode: 'cors',
       cache: 'no-store',
@@ -93,15 +65,20 @@ export const fetchAppData = async () => {
       redirect: 'follow'
     });
 
-    if (!response.ok) {
-      console.warn(`[PangeaCloud] Fetch returned status ${response.status}`);
-      return null;
-    }
+    if (!response.ok) return null;
 
-    const remoteData = await response.json();
-    return remoteData;
+    const rawData = await response.json();
+    
+    // Normalize Data: Map Sheet Names back to App State keys
+    const normalized: any = {};
+    Object.keys(rawData).forEach(sheetKey => {
+      const stateKey = SHEET_MAP[sheetKey] || sheetKey.toLowerCase();
+      normalized[stateKey] = rawData[sheetKey];
+    });
+
+    return normalized;
   } catch (error) {
-    console.error("[PangeaCloud] Fetch error:", error);
+    console.error("[Sync] Inbound Fetch error:", error);
     return null;
   }
 };

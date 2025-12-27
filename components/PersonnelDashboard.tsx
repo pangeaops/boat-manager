@@ -10,12 +10,16 @@ interface PersonnelDashboardProps {
 }
 
 const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole, onUpdatePersonnel }) => {
-  const [editingPerson, setEditingPerson] = useState<Personnel | null>(null);
-  const [viewingProfile, setViewingProfile] = useState<Personnel | null>(null);
+  const [editingPersonId, setEditingPersonId] = useState<string | null>(null);
+  const [viewingProfileId, setViewingProfileId] = useState<string | null>(null);
   const [showPastEmployees, setShowPastEmployees] = useState(false);
 
+  // Derived states to ensure we always have the freshest data from 'data.personnel'
   const activeStaff = data.personnel.filter(p => p.isActive !== false);
   const inactiveStaff = data.personnel.filter(p => p.isActive === false);
+  
+  const viewingProfile = data.personnel.find(p => p.id === viewingProfileId);
+  const editingPerson = data.personnel.find(p => p.id === editingPersonId);
 
   const getGroupedPersonnel = (list: Personnel[]) => {
     const groups: Record<string, Personnel[]> = {};
@@ -38,12 +42,12 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
   const StaffCard: React.FC<{ person: Personnel }> = ({ person }) => (
     <div 
       className="bg-white rounded-[3rem] p-8 border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-2xl transition-all duration-500 cursor-pointer"
-      onClick={() => userRole === 'Admin' && setViewingProfile(person)}
+      onClick={() => userRole === 'Admin' && setViewingProfileId(person.id)}
     >
       <div className="absolute top-6 right-6 flex space-x-2 z-20">
         {userRole === 'Admin' && (
           <button 
-            onClick={(e) => { e.stopPropagation(); setEditingPerson(person); }}
+            onClick={(e) => { e.stopPropagation(); setEditingPersonId(person.id); }}
             className="w-12 h-12 bg-white/80 backdrop-blur shadow-sm rounded-xl flex items-center justify-center text-[8px] font-black hover:bg-[#ffb519] hover:text-white transition-all border border-slate-100"
           >
             EDIT
@@ -55,7 +59,7 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
         <div className="flex items-center space-x-4">
           <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center text-2xl shadow-inner text-white overflow-hidden border-2 border-slate-100">
             {person.profilePhoto ? (
-              <img src={person.profilePhoto} className="w-full h-full object-cover" />
+              <img src={person.profilePhoto} className="w-full h-full object-cover" alt={person.name} />
             ) : (
               <span className="text-3xl grayscale opacity-30">
                 {person.role.includes('Capitán') ? '⚓' : person.role === PersonnelRole.CEO ? '🏢' : '👤'}
@@ -130,9 +134,9 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
           initialData={editingPerson} 
           onAddPersonnel={(p) => {
             onUpdatePersonnel(p);
-            setEditingPerson(null);
+            setEditingPersonId(null);
           }}
-          onCancel={() => setEditingPerson(null)}
+          onCancel={() => setEditingPersonId(null)}
         />
       </div>
     );
@@ -200,7 +204,7 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
               <div className="flex items-center space-x-6">
                  <div className="w-24 h-24 rounded-[1.5rem] bg-white/10 flex items-center justify-center overflow-hidden border border-white/20">
                     {viewingProfile.profilePhoto ? (
-                      <img src={viewingProfile.profilePhoto} className="w-full h-full object-cover" />
+                      <img src={viewingProfile.profilePhoto} className="w-full h-full object-cover" alt={viewingProfile.name} />
                     ) : (
                       <span className="text-4xl grayscale opacity-30">👤</span>
                     )}
@@ -211,7 +215,7 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
                  </div>
               </div>
               <button 
-                onClick={() => setViewingProfile(null)}
+                onClick={() => setViewingProfileId(null)}
                 className="w-12 h-12 rounded-2xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all font-black"
               >
                 ✕
@@ -259,7 +263,7 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
                       {viewingProfile.licensePhoto && (
                         <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                           <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Attached Asset</p>
-                          <img src={viewingProfile.licensePhoto} className="w-full h-48 object-contain bg-white rounded-xl shadow-sm" />
+                          <img src={viewingProfile.licensePhoto} className="w-full h-48 object-contain bg-white rounded-xl shadow-sm" alt="License Asset" />
                         </div>
                       )}
                     </section>
@@ -343,7 +347,7 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
                  <p className="text-[10px] font-bold text-slate-500">Only authorized Admins can access this dossier.</p>
                </div>
                <button 
-                onClick={() => setViewingProfile(null)}
+                onClick={() => setViewingProfileId(null)}
                 className="bg-[#434343] text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-xl"
                >
                  Close Dossier

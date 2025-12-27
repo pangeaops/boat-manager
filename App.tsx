@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppData, Boat, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem } from './types.ts';
 import Layout from './components/Layout.tsx';
 import Dashboard from './components/Dashboard.tsx';
@@ -40,6 +40,9 @@ const App: React.FC = () => {
     };
   });
 
+  // Reference to prevent "State Stuttering" during refreshes
+  const lastUpdateRef = useRef<number>(Date.now());
+
   const refreshData = useCallback(async (showIndicator = false) => {
     if (!currentUser) return;
     if (showIndicator) setIsSyncing(true);
@@ -47,35 +50,42 @@ const App: React.FC = () => {
     try {
       const remoteData = await fetchAppData();
       if (remoteData) {
-        setData(prev => ({
-          ...prev,
-          ...remoteData,
-          logs: remoteData.logs || prev.logs,
-          boats: remoteData.boats || prev.boats,
-          tasks: remoteData.tasks || prev.tasks,
-          personnel: remoteData.personnel || prev.personnel,
-          tours: remoteData.tours || prev.tours,
-          inventory: remoteData.inventory || prev.inventory,
-        }));
+        // Only update if remote data is actually present
+        setData(prev => {
+          // Merge strategy: Cloud data is source of truth, but we keep local logs
+          // unless the cloud has more recent ones.
+          const newState = {
+            ...prev,
+            boats: remoteData.boats || prev.boats,
+            tasks: remoteData.tasks || prev.tasks,
+            personnel: remoteData.personnel || prev.personnel,
+            tours: remoteData.tours || prev.tours,
+            inventory: remoteData.inventory || prev.inventory,
+            logs: remoteData.logs && remoteData.logs.length >= prev.logs.length ? remoteData.logs : prev.logs
+          };
+          return newState;
+        });
         setLastSync(new Date());
+        lastUpdateRef.current = Date.now();
 
         const { needsDaily, needsWeekly } = checkReportStatus(remoteData);
         if (needsWeekly) setPendingReport('weekly');
         else if (needsDaily) setPendingReport('daily');
       }
     } catch (err) {
-      console.error("Background sync failed", err);
+      console.error("[Sync] Background refresh failed:", err);
     } finally {
       setIsSyncing(false);
     }
   }, [currentUser]);
 
+  // High-Frequency Polling (10s)
   useEffect(() => {
     if (currentUser) {
       refreshData(true);
       const interval = setInterval(() => {
         refreshData();
-      }, 15000); 
+      }, 10000); 
       return () => clearInterval(interval);
     }
   }, [currentUser, refreshData]);
@@ -101,8 +111,8 @@ const App: React.FC = () => {
       const boat = prev.boats.find(b => b.id === boatId);
       if (!boat) return prev;
       const updatedBoat = { ...boat, status };
-      createLog('Boat Status Changed', `${boat.name} set to ${status}.`, 'Fleet');
       syncToSheet('Boats', updatedBoat);
+      createLog('Boat Status Changed', `${boat.name} set to ${status}.`, 'Fleet');
       return { ...prev, boats: prev.boats.map(b => b.id === boatId ? updatedBoat : b) };
     });
   };
@@ -123,17 +133,26 @@ const App: React.FC = () => {
   };
 
   const addPersonnel = async (person: Personnel) => {
+    // 1. Update local state immediately
     setData(prev => ({ ...prev, personnel: [...prev.personnel, person] }));
     createLog('Personnel Added', `${person.name} onboarded.`, 'Personnel');
-    // Using 'Personnel Info' to match user's sheet tab naming
-    await syncToSheet('Personnel Info', person);
-    setActiveTab('personnel_hub');
+    
+    // 2. Sync to cloud using the specific mapped tab name
+    const success = await syncToSheet('Personnel Info', person);
+    if (success) {
+      setActiveTab('personnel_hub');
+    }
   };
 
   const updatePersonnel = async (person: Personnel) => {
-    setData(prev => ({ ...prev, personnel: prev.personnel.map(p => p.id === person.id ? person : p) }));
+    // 1. Update local state immediately
+    setData(prev => ({ 
+      ...prev, 
+      personnel: prev.personnel.map(p => p.id === person.id ? person : p) 
+    }));
     createLog('Personnel Updated', `${person.name} profile modified.`, 'Personnel');
-    // Using 'Personnel Info' to match user's sheet tab naming
+    
+    // 2. Sync to cloud
     await syncToSheet('Personnel Info', person);
   };
 
