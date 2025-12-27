@@ -1,6 +1,5 @@
 import React from 'react';
 import { AuditLog } from '../types';
-import { generateAuditLogPDF, sendEmailReport } from '../services/reportService';
 
 interface LogSectionProps {
   logs: AuditLog[];
@@ -17,42 +16,11 @@ const LogSection: React.FC<LogSectionProps> = ({ logs }) => {
     }
   };
 
-  const handleDownloadPDF = () => {
-    const doc = generateAuditLogPDF(logs);
-    doc.save(`Pangea_Audit_Log_${new Date().toISOString().split('T')[0]}.pdf`);
-  };
-
-  const handleEmailReport = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const todaysLogs = logs.filter(l => l.timestamp.includes(today));
-    const summary = todaysLogs.map(l => `${l.timestamp.split('T')[1].substring(0,5)}: ${l.action} - ${l.details}`).join('\n');
-    sendEmailReport(
-      `Pangea Audit Log Summary - ${today}`,
-      `Operational activity summary for today:\n\n${summary || "No activity recorded for today."}\n\nFull log available in system archives.`
-    );
-  };
-
   return (
     <div className="space-y-6">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-slate-900">Operations Feed</h2>
-          <p className="text-slate-500 font-medium">Full audit trail of all manual and automated actions.</p>
-        </div>
-        <div className="flex space-x-3">
-          <button 
-            onClick={handleDownloadPDF}
-            className="bg-white border border-slate-200 text-slate-700 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center space-x-2"
-          >
-            <span>📄 Download PDF</span>
-          </button>
-          <button 
-            onClick={handleEmailReport}
-            className="bg-[#434343] text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all flex items-center space-x-2 shadow-lg"
-          >
-            <span>📧 Email Today's Log</span>
-          </button>
-        </div>
+      <header>
+        <h2 className="text-3xl font-black text-slate-900">Operations Feed</h2>
+        <p className="text-slate-500 font-medium">Full audit trail of all manual and automated actions.</p>
       </header>
 
       <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
@@ -72,7 +40,7 @@ const LogSection: React.FC<LogSectionProps> = ({ logs }) => {
                   <td colSpan={4} className="px-6 py-20 text-center text-slate-400 italic">No activity recorded yet.</td>
                 </tr>
               ) : (
-                [...logs].map((log) => (
+                [...logs].reverse().map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-xs font-mono font-bold text-slate-600">{new Date(log.timestamp).toLocaleTimeString()}</span>

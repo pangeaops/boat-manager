@@ -1,68 +1,85 @@
 /**
- * Pangea Ops - Google Sheets "Database Style" Bridge
+ * Pangea Ops - Google Sheets & Drive Sync Service
+ * 
+ * Live connection established to: Pangea Bocas Apps Script Bridge
  */
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwP-sZZLIc0VT-ovjFFxyHsch9Cfl_xty61kQToATHjCD9XJVdakR7wE0mbvopex_2GTw/exec";
-
-/**
- * Ensures complex data (arrays/objects) is fully stringified before sending to Sheets.
- * This fixes the [Ljava.lang.Object;@... error in spreadsheet cells.
- */
-const sanitizeDataForSync = (data: any) => {
-  const sanitized: any = {};
-  for (const key in data) {
-    const value = data[key];
-    // CRITICAL: Robustly detect and stringify any object or array to prevent Apps Script conversion issues
-    if (value !== null && typeof value === 'object') {
-      try {
-        sanitized[key] = JSON.stringify(value);
-      } catch (e) {
-        console.error(`Stringification failed for key: ${key}`, e);
-        sanitized[key] = String(value);
-      }
-    } else {
-      sanitized[key] = value;
-    }
-  }
-  return sanitized;
-};
+// Updated to the URL provided in the latest request to ensure proper access permissions
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyK2c-jGvMxuoimp5nj1m_vfclV5cGY9h28oonObGQyJ46qpxlHmIThfJ5-3Svh6bL5w/exec";
 
 export const syncToSheet = async (sheetName: string, data: any) => {
-  if (!SCRIPT_URL) return false;
+  if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_GOOGLE_APPS_SCRIPT_URL_HERE")) {
+    console.warn(`Sync [${sheetName}] skipped: Bridge URL not configured.`);
+    return false;
+  }
 
   try {
-    const cleanData = sanitizeDataForSync(data);
+    // Automatically detect arrays or objects and convert them to JSON strings
+    // This prevents the [Ljava.lang.Object;@... error in Google Sheets.
+    const sanitizedData = Object.keys(data).reduce((acc, key) => {
+      const val = data[key];
+      acc[key] = (typeof val === 'object' && val !== null) ? JSON.stringify(val) : val;
+      return acc;
+    }, {} as any);
+
     const payload = {
+      method: "update",
       sheet: sheetName,
-      data: cleanData
+      data: {
+        ...sanitizedData,
+        _lastUpdated: new Date().toISOString(),
+        _clientSource: 'PangeaOps-Web'
+      }
     };
 
-    // 'no-cors' is mandatory for Google Apps Script POST requests
+    // We use 'text/plain' to ensure a "Simple Request". 
+    // This is the most reliable way to send POST data to Google Apps Script 
+    // as it avoids complex CORS preflight checks that often fail on GAS redirects.
     await fetch(SCRIPT_URL, {
       method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload)
+      mode: 'no-cors', 
+      cache: 'no-cache',
+      headers: { 
+        'Content-Type': 'text/plain' 
+      },
+      body: JSON.stringify(payload),
     });
 
-    console.log(`Synced ${sheetName} to Cloud (Sanitized & Stringified)`);
+    console.log(`Cloud Sync Sent: [${sheetName}]`);
     return true;
   } catch (error) {
-    console.error(`Failed to sync ${sheetName}:`, error);
+    console.error(`Cloud Sync Failure [${sheetName}]:`, error);
     return false;
   }
 };
 
 export const fetchAppData = async () => {
-  if (!SCRIPT_URL) return null;
+  if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_GOOGLE_APPS_SCRIPT_URL_HERE")) return null;
 
   try {
-    const response = await fetch(`${SCRIPT_URL}?cb=${Date.now()}`);
-    if (!response.ok) throw new Error("Cloud fetch failed");
-    const data = await response.json();
-    return data;
+    // Standard GET request to fetch latest data.
+    // mode: 'cors' is required to read the response body.
+    // credentials: 'omit' and redirect: 'follow' are used to handle the 302 redirect 
+    // that Google Apps Script uses to send the actual JSON payload.
+    const response = await fetch(`${SCRIPT_URL}?t=${Date.now()}`, {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-store',
+      credentials: 'omit',
+      redirect: 'follow'
+    });
+
+    if (!response.ok) {
+      console.warn(`Cloud Bridge returned error ${response.status}. Ensure GAS script is published to 'Anyone'.`);
+      return null;
+    }
+
+    const remoteData = await response.json();
+    return remoteData;
   } catch (error) {
-    console.warn("Cloud pull failed - Using local storage");
+    // If you still see "Failed to fetch", verify the Apps Script is published 
+    // with: "Execute as: Me" and "Who has access: Anyone".
+    console.error("Cloud Fetch Error: Failed to fetch. Ensure script is published to 'Anyone' and CORS is allowed.", error);
     return null;
   }
 };

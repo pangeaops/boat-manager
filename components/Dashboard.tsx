@@ -5,10 +5,10 @@ import { getFleetInsights } from '../services/geminiService';
 interface DashboardProps {
   data: AppData;
   onSendFullDailyReport: () => void;
-  onManualSync?: () => void;
+  isSyncing?: boolean;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, onManualSync }) => {
+const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSyncing }) => {
   const [insights, setInsights] = useState<string>('');
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [lastFetched, setLastFetched] = useState<number>(0);
@@ -65,16 +65,18 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, onMa
     <div className="space-y-10">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <h2 className="text-4xl font-black text-slate-900 tracking-tight">Operations Dashboard</h2>
+          <div className="flex items-center space-x-3">
+             <h2 className="text-4xl font-black text-slate-900 tracking-tight">Operations Dashboard</h2>
+             {isSyncing && (
+                <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-100 px-3 py-1 rounded-full animate-pulse">
+                   <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
+                   <span className="text-[8px] font-black uppercase text-amber-600 tracking-widest">Live Syncing</span>
+                </div>
+             )}
+          </div>
           <p className="text-slate-500 font-medium">Real-time command center for Pangea Bocas.</p>
         </div>
-        <div className="flex items-center space-x-3">
-          <button 
-            onClick={onManualSync}
-            className="bg-white border border-slate-200 text-slate-600 px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center space-x-2 active:scale-95"
-          >
-            <span>🔄 Force Sync</span>
-          </button>
+        <div className="flex items-center space-x-4">
           <button 
             onClick={onSendFullDailyReport}
             className="bg-[#434343] text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-xl flex items-center space-x-3 active:scale-95"

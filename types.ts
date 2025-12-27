@@ -83,7 +83,6 @@ export interface Tour {
   tourType: string;
   route: string;
   paxCount: number;
-  source: string;
   startGas: number;
   endGas?: number;
   hmiStart: number;

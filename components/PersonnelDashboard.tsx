@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { AppData, Personnel, PersonnelRole, UserRole } from '../types';
 import AddPersonnelForm from './AddPersonnelForm';
@@ -78,6 +77,17 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
              <div className="text-right space-y-1">
                <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Phone Number</p>
                <p className="text-xs font-black text-slate-800">{person.phone}</p>
+             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+             <div className="space-y-1">
+               <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">License #</p>
+               <p className="text-xs font-black text-slate-800">{person.licenseNumber || '—'}</p>
+             </div>
+             <div className="text-right space-y-1">
+               <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">License Exp</p>
+               <p className="text-xs font-black text-slate-800">{person.licenseExpDate || '—'}</p>
              </div>
           </div>
 
