@@ -80,7 +80,39 @@ export const generateAuditLogPDF = (logs: AuditLog[]) => {
   return doc;
 };
 
-export const sendEmailReport = (subject: string, body: string, to: string = 'ops@pangeabocas.com') => {
-  const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+export const generateWeeklySummary = (data: AppData) => {
+  const doc = new jsPDF();
+  const last7Days = new Date();
+  last7Days.setDate(last7Days.getDate() - 7);
+  
+  const weeklyTours = data.tours.filter(t => new Date(t.date) >= last7Days);
+  const totalPax = weeklyTours.reduce((acc, t) => acc + t.paxCount, 0);
+  
+  doc.setFontSize(22);
+  doc.text("WEEKLY FLEET SUMMARY", 20, 25);
+  doc.setFontSize(10);
+  doc.text(`Period: ${last7Days.toLocaleDateString()} - ${new Date().toLocaleDateString()}`, 20, 32);
+
+  let y = 50;
+  doc.setFontSize(12);
+  doc.text(`Total Tours: ${weeklyTours.length}`, 20, y); y += 10;
+  doc.text(`Total Guests (PAX): ${totalPax}`, 20, y); y += 15;
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Vessel Activity:", 20, y); y += 10;
+  doc.setFont("helvetica", "normal");
+  
+  data.boats.forEach(boat => {
+    const boatTours = weeklyTours.filter(t => t.boatId === boat.id).length;
+    doc.text(`${boat.name}: ${boatTours} trips`, 30, y);
+    y += 8;
+  });
+
+  return doc;
+};
+
+export const sendEmailReport = (subject: string, body: string, to: string | string[] = ['ops@pangeabocas.com', 'hello@pangeabocas.com']) => {
+  const recipients = Array.isArray(to) ? to.join(',') : to;
+  const mailtoUrl = `mailto:${recipients}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.open(mailtoUrl, '_blank');
 };

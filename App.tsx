@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AppData, Boat, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem } from './types.ts';
+import { AppData, Boat, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem, Task } from './types.ts';
 import Layout from './components/Layout.tsx';
 import Dashboard from './components/Dashboard.tsx';
 import BoatDashboard from './components/BoatDashboard.tsx';
@@ -16,7 +16,7 @@ import InventoryDashboard from './components/InventoryDashboard.tsx';
 import { INITIAL_DATA_KEY, FULL_FLEET, INITIAL_PERSONNEL } from './constants.ts';
 import { generateDailyOperationalSummary } from './services/geminiService.ts';
 import { syncToSheet, fetchAppData } from './services/sheetService.ts';
-import { generateAuditLogPDF, sendEmailReport } from './services/reportService.ts';
+import { generateAuditLogPDF, sendEmailReport, generateWeeklySummary } from './services/reportService.ts';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
@@ -26,6 +26,7 @@ const App: React.FC = () => {
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<'online' | 'offline' | 'pending'>('pending');
+  const [pendingReport, setPendingReport] = useState<'daily' | 'weekly' | null>(null);
   
   const isFetchingRef = useRef(false);
 
@@ -40,6 +41,60 @@ const App: React.FC = () => {
       logs: []
     };
   });
+
+  // Automatic Report Check Logic
+  useEffect(() => {
+    if (currentUser) {
+      const today = new Date().toISOString().split('T')[0];
+      const lastDaily = localStorage.getItem('last_daily_report');
+      const lastWeekly = localStorage.getItem('last_weekly_report');
+      
+      // Check Daily
+      if (lastDaily !== today) {
+        setPendingReport('daily');
+      } 
+      // Check Weekly (every 7 days)
+      else if (!lastWeekly || (Date.now() - parseInt(lastWeekly)) > 7 * 24 * 60 * 60 * 1000) {
+        setPendingReport('weekly');
+      }
+    }
+  }, [currentUser]);
+
+  const handlePendingReport = async () => {
+    if (!pendingReport) return;
+    setIsGeneratingReport(true);
+    
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      if (pendingReport === 'daily') {
+        const todayLogs = data.logs.filter(l => l.timestamp.includes(today));
+        const doc = generateAuditLogPDF(todayLogs);
+        doc.save(`Daily_Ops_Report_${today}.pdf`);
+        
+        let aiSummary = "Daily report compiled.";
+        try { aiSummary = await generateDailyOperationalSummary(data); } catch(e) {}
+        
+        sendEmailReport(
+          `AUTOMATIC DAILY REPORT - ${new Date().toDateString()}`,
+          `DAILY SUMMARY:\n${aiSummary}\n\nNote: Detailed PDF Log has been downloaded. Please attach it to this email.`
+        );
+        localStorage.setItem('last_daily_report', today);
+      } else {
+        const doc = generateWeeklySummary(data);
+        doc.save(`Weekly_Fleet_Report_${today}.pdf`);
+        sendEmailReport(
+          `AUTOMATIC WEEKLY FLEET REPORT - Week of ${new Date().toLocaleDateString()}`,
+          `WEEKLY SUMMARY:\nAttached is the performance summary for the fleet over the last 7 days.`
+        );
+        localStorage.setItem('last_weekly_report', Date.now().toString());
+      }
+      setPendingReport(null);
+    } catch (err) {
+      console.error("Auto report failed", err);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
 
   const refreshData = useCallback(async (showIndicator = false) => {
     if (!currentUser || isFetchingRef.current) return;
@@ -171,12 +226,13 @@ const App: React.FC = () => {
     if (editingBoat) return <AddBoatForm initialData={editingBoat} onAddBoat={(b) => { 
       setData(prev => ({...prev, boats: prev.boats.map(x => x.id === b.id ? b : x)}));
       syncToSheet('Boats', b);
+      createLog('Boat Updated', `${b.name} record modified.`, 'Fleet');
       setEditingBoat(null);
     }} onCancel={() => setEditingBoat(null)} />;
     
     switch (activeTab) {
       case 'dashboard': return <Dashboard data={data} onSendFullDailyReport={handleFullDailyReport} onManualSync={() => refreshData(true)} />;
-      case 'fleet': return <BoatDashboard data={data} userRole={currentUser.role} onUpdateTaskStatus={() => {}} onEditBoat={setEditingBoat} onUpdateBoatStatus={handleUpdateBoatStatus} />;
+      case 'fleet': return <BoatDashboard data={data} userRole={currentUser.role} onUpdateTaskStatus={(id, s) => { setData(prev => ({...prev, tasks: prev.tasks.map(t => t.id === id ? {...t, status: s} : t)})); syncToSheet('Tasks', {id, status: s}); }} onEditBoat={setEditingBoat} onUpdateBoatStatus={handleUpdateBoatStatus} />;
       case 'add_forms': return (
         <div className="space-y-12">
           <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
@@ -190,15 +246,15 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-            <AddBoatForm onAddBoat={(b) => { setData(prev => ({...prev, boats: [...prev.boats, b]})); syncToSheet('Boats', b); setActiveTab('fleet'); }} />
-            <AddPersonnelForm onAddPersonnel={(p) => { setData(prev => ({...prev, personnel: [...prev.personnel, p]})); syncToSheet('Personnel', p); setActiveTab('personnel_hub'); }} />
+            <AddBoatForm onAddBoat={(b) => { setData(prev => ({...prev, boats: [...prev.boats, b]})); syncToSheet('Boats', b); createLog('Boat Created', `${b.name} registered.`, 'Fleet'); setActiveTab('fleet'); }} />
+            <AddPersonnelForm onAddPersonnel={(p) => { setData(prev => ({...prev, personnel: [...prev.personnel, p]})); syncToSheet('Personnel', p); createLog('Staff Registered', `${p.name} added to database.`, 'Personnel'); setActiveTab('personnel_hub'); }} />
           </div>
         </div>
       );
-      case 'tours': return <TourLogForm data={data} onAddTour={(t) => { setData(prev => ({...prev, tours: [...prev.tours, t]})); syncToSheet('Tours', t); }} onUpdateTour={(id, u) => { setData(prev => ({...prev, tours: prev.tours.map(t => t.id === id ? {...t, ...u} : t)})); syncToSheet('Tours', {id, ...u}); }} />;
-      case 'inventory': return <InventoryDashboard data={data} onUpdateInventory={(i) => { setData(prev => ({...prev, inventory: prev.inventory.find(x => x.id === i.id) ? prev.inventory.map(x => x.id === i.id ? i : x) : [...prev.inventory, i]})); syncToSheet('Inventory', i); }} />;
-      case 'personnel_hub': return <PersonnelDashboard data={data} userRole={currentUser.role} onUpdatePersonnel={(p) => { setData(prev => ({...prev, personnel: prev.personnel.map(x => x.id === p.id ? p : x)})); syncToSheet('Personnel', p); }} />;
-      case 'maintenance': return <MaintenanceForm data={data} onAddTask={(t) => { setData(prev => ({...prev, tasks: [...prev.tasks, t]})); syncToSheet('Tasks', t); }} onSendReport={() => {}} onUpdateStatus={(id, s) => { setData(prev => ({...prev, tasks: prev.tasks.map(t => t.id === id ? {...t, status: s} : t)})); syncToSheet('Tasks', {id, status: s}); }} />;
+      case 'tours': return <TourLogForm data={data} onAddTour={(t) => { setData(prev => ({...prev, tours: [...prev.tours, t]})); syncToSheet('Tours', t); createLog('Tour Dispatched', `${t.route} on ${t.boatId}.`, 'Tour'); }} onUpdateTour={(id, u) => { setData(prev => ({...prev, tours: prev.tours.map(t => t.id === id ? {...t, ...u} : t)})); syncToSheet('Tours', {id, ...u}); createLog('Tour Reconciled', `Trip ${id} completed.`, 'Tour'); }} />;
+      case 'inventory': return <InventoryDashboard data={data} onUpdateInventory={(i) => { setData(prev => ({...prev, inventory: prev.inventory.find(x => x.id === i.id) ? prev.inventory.map(x => x.id === i.id ? i : x) : [...prev.inventory, i]})); syncToSheet('Inventory', i); createLog('Inventory Updated', `${i.name} stock level changed.`, 'Inventory'); }} />;
+      case 'personnel_hub': return <PersonnelDashboard data={data} userRole={currentUser.role} onUpdatePersonnel={(p) => { setData(prev => ({...prev, personnel: prev.personnel.map(x => x.id === p.id ? p : x)})); syncToSheet('Personnel', p); createLog('Staff Updated', `${p.name} profile modified.`, 'Personnel'); }} />;
+      case 'maintenance': return <MaintenanceForm data={data} onAddTask={(t) => { setData(prev => ({...prev, tasks: [...prev.tasks, t]})); syncToSheet('Tasks', t); createLog('Task Assigned', `${t.taskType} for ${t.boatId}.`, 'Task'); }} onSendReport={() => {}} onUpdateStatus={(id, s) => { setData(prev => ({...prev, tasks: prev.tasks.map(t => t.id === id ? {...t, status: s} : t)})); syncToSheet('Tasks', {id, status: s}); createLog('Task Status Change', `Service ${id} set to ${s}.`, 'Task'); }} />;
       case 'protocols': return <Protocols />;
       case 'admin_dashboard': return <AdminDashboard data={data} />;
       case 'logs': return <LogSection logs={data.logs} />;
@@ -216,11 +272,32 @@ const App: React.FC = () => {
       lastSync={lastSync}
       cloudStatus={cloudStatus}
     >
+      {/* Automatic Report Prompt */}
+      {pendingReport && (
+        <div className="mb-8 animate-in slide-in-from-top-4 duration-500">
+           <div className="bg-[#ffb519] p-6 rounded-3xl shadow-xl flex flex-col md:flex-row justify-between items-center text-white gap-4">
+              <div className="flex items-center space-x-4">
+                 <span className="text-3xl">📧</span>
+                 <div>
+                    <h3 className="font-black text-lg leading-tight">Pending {pendingReport === 'daily' ? 'Daily' : 'Weekly'} General Report</h3>
+                    <p className="text-xs font-bold text-white/80 uppercase tracking-widest">Authorized for ops@pangeabocas.com & hello@pangeabocas.com</p>
+                 </div>
+              </div>
+              <button 
+                onClick={handlePendingReport}
+                className="bg-white text-[#ffb519] px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:scale-105 transition-all"
+              >
+                Send Automatic Report Now
+              </button>
+           </div>
+        </div>
+      )}
+
       {isGeneratingReport && (
         <div className="fixed inset-0 bg-white/60 backdrop-blur-md z-50 flex items-center justify-center">
           <div className="bg-white p-12 rounded-[3rem] shadow-2xl border border-slate-100 text-center space-y-4">
             <div className="w-12 h-12 border-4 border-[#ffb519] border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="font-black">Generating Report...</p>
+            <p className="font-black">Compiling Periodic Report...</p>
             <p className="text-xs text-slate-400 font-bold uppercase">Synthesizing operational data</p>
           </div>
         </div>
