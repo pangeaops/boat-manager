@@ -1,4 +1,3 @@
-
 export enum Priority {
   LOW = 'Low',
   MEDIUM = 'Medium',
@@ -144,7 +143,6 @@ export interface Boat {
   mandatoryChecklist: string[];
 }
 
-// Added InactiveReason type to fix the import error in components/AddPersonnelForm.tsx
 export type InactiveReason = 'Firing' | 'Resignation' | 'No Show' | 'Other';
 
 export interface Personnel {
@@ -160,7 +158,6 @@ export interface Personnel {
   bloodType?: string;
   idNumber?: string;
   isActive: boolean;
-  // Updated to use the exported InactiveReason type
   inactiveReason?: InactiveReason;
   inactiveDate?: string;
   bankName?: string;

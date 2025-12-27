@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppData, Boat, Task, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem } from './types.ts';
+import { AppData, Boat, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem } from './types.ts';
 import Layout from './components/Layout.tsx';
 import Dashboard from './components/Dashboard.tsx';
 import BoatDashboard from './components/BoatDashboard.tsx';
@@ -8,8 +8,8 @@ import AddBoatForm from './components/AddBoatForm.tsx';
 import AddPersonnelForm from './components/AddPersonnelForm.tsx';
 import PersonnelDashboard from './components/PersonnelDashboard.tsx';
 import LogSection from './components/LogSection.tsx';
-import Protocols from './components/Protocols.tsx';
 import TourLogForm from './components/TourLogForm.tsx';
+import Protocols from './components/Protocols.tsx';
 import Login from './components/Login.tsx';
 import AdminDashboard from './components/AdminDashboard.tsx';
 import InventoryDashboard from './components/InventoryDashboard.tsx';
@@ -151,6 +151,7 @@ const App: React.FC = () => {
       case 'inventory': return <InventoryDashboard data={data} onUpdateInventory={updateInventory} />;
       case 'personnel_hub': return <PersonnelDashboard data={data} userRole={currentUser.role} onUpdatePersonnel={updatePersonnel} />;
       case 'maintenance': return <MaintenanceForm data={data} onAddTask={() => {}} onSendReport={() => {}} onUpdateStatus={() => {}} />;
+      case 'protocols': return <Protocols />;
       case 'admin_dashboard': return <AdminDashboard data={data} />;
       case 'logs': return <LogSection logs={data.logs} />;
       case 'add_forms': return (
