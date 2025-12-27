@@ -1,5 +1,4 @@
-
-import { Priority, PersonnelRole, Boat, Personnel, BoatStatus } from './types';
+import { PersonnelRole, Boat, Personnel, BoatStatus } from './types';
 
 export const PANGEA_YELLOW = '#ffb519';
 export const PANGEA_DARK = '#434343';
