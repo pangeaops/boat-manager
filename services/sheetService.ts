@@ -9,7 +9,6 @@
  * function doPost(e) {
  *   try {
  *     var ss = SpreadsheetApp.getActiveSpreadsheet();
- *     // Read the payload from the text body
  *     var payload = JSON.parse(e.postData.contents);
  *     var sheetName = payload.sheet;
  *     var data = payload.data;
@@ -44,7 +43,7 @@
  *     sheets.forEach(function(s) {
  *       var name = s.getName();
  *       var data = s.getDataRange().getValues();
- *       if (data.length > 0) {
+ *       if (data.length > 1) {
  *         var headers = data.shift();
  *         result[name] = data.map(function(row) {
  *           var obj = {};
@@ -66,11 +65,11 @@
  * 4. Click "Deploy" > "New Deployment"
  * 5. Select type: "Web App"
  * 6. Set "Execute as" to: "Me"
- * 7. Set "Who has access" to: "Anyone" (Critical for the app to talk to it)
- * 8. Copy the Web App URL and paste it below.
+ * 7. Set "Who has access" to: "Anyone"
+ * 8. Copy the Web App URL and update SCRIPT_URL below.
  */
 
-const SCRIPT_URL = "https://script.google.com/a/macros/pangeabocas.com/s/AKfycbzhuuI1RqJIoFkJbFPGl0-gCXnb9u7ieR33hk-gzYuYLdhdIFP6aVbTG803LjbCcjxgzQ/exec";
+const SCRIPT_URL = "https://script.google.com/a/macros/pangeabocas.com/s/AKfycbwqakvxIfM9IgTRMSouIls67OYRYRQHTqCqs4NrKqNcmdxycb4KUZSSJ0e3Hfdd6SBhtA/exec";
 
 export const syncToSheet = async (sheetName: string, data: any) => {
   if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_URL")) return false;
@@ -82,8 +81,10 @@ export const syncToSheet = async (sheetName: string, data: any) => {
       data: { ...data, _clientSource: 'PangeaOps-Web' }
     };
 
-    // 'no-cors' mode is required for fire-and-forget to GAS.
-    // Content-Type 'text/plain' makes it a "Simple Request" to avoid preflight OPTIONS.
+    /**
+     * Using 'no-cors' and 'text/plain' to bypass CORS preflight.
+     * Google Apps Script does not support OPTIONS requests.
+     */
     await fetch(SCRIPT_URL, {
       method: 'POST',
       mode: 'no-cors', 
@@ -104,22 +105,20 @@ export const fetchAppData = async () => {
 
   try {
     /**
-     * CRITICAL: We remove the 'Accept' header. 
-     * Custom headers trigger a CORS preflight (OPTIONS) which GAS fails.
-     * Simple GET requests are allowed and handle redirects correctly.
+     * Simple GET request without custom headers to avoid CORS preflight.
      */
     const response = await fetch(`${SCRIPT_URL}?t=${Date.now()}`, {
       method: 'GET'
-      // No custom headers here!
     });
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     
     const remoteData = await response.json();
+    console.log("📥 Cloud Data Pulled Successfully");
     return remoteData;
   } catch (error) {
-    // If we fail here, it's likely a network issue or the URL is not deployed as 'Anyone'
-    console.warn("📥 Cloud pull bypassed. Check GAS deployment settings.");
+    console.warn("📥 Cloud pull failed. Ensure the Web App is deployed with 'Anyone' access.");
+    console.error(error);
     return null;
   }
 };
