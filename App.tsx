@@ -132,12 +132,39 @@ const App: React.FC = () => {
     setIsGeneratingReport(true);
     try {
       const summary = await generateDailyOperationalSummary(data);
-      if (!summary) throw new Error();
+      if (!summary) throw new Error("The AI service returned no data.");
+      
+      // If summary starts with error codes from geminiService
+      if (summary.includes("API_KEY_MISSING") || summary.includes("QUOTA_EXCEEDED") || summary.includes("API_ERROR")) {
+        alert(summary);
+        return;
+      }
+
       const doc = new jsPDF();
-      doc.text(doc.splitTextToSize(summary, 170), 20, 30);
+      const splitText = doc.splitTextToSize(summary, 170);
+      let y = 30;
+      
+      doc.setFontSize(16);
+      doc.text("Pangea Bocas Daily Operational Report", 20, 20);
+      doc.setFontSize(10);
+      
+      splitText.forEach((line: string) => {
+        if (y > 280) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(line, 20, y);
+        y += 7;
+      });
+
       doc.save(`Pangea_Ops_${new Date().toISOString().split('T')[0]}.pdf`);
       createLog('Full Report Exported', 'Operational PDF generated.', 'Tour');
-    } catch (err) { alert("Failed to generate report."); } finally { setIsGeneratingReport(false); }
+    } catch (err: any) { 
+      console.error("Report Generation Error:", err);
+      alert(`Failed to generate report: ${err.message || "Unknown error"}`); 
+    } finally { 
+      setIsGeneratingReport(false); 
+    }
   };
 
   if (!currentUser) return <Login onLogin={(user) => setCurrentUser(user)} />;
@@ -171,6 +198,7 @@ const App: React.FC = () => {
           <div className="bg-white p-12 rounded-[3rem] shadow-2xl border border-slate-100 text-center space-y-4">
             <div className="w-12 h-12 border-4 border-[#ffb519] border-t-transparent rounded-full animate-spin mx-auto"></div>
             <p className="font-black">Compiling Pangea Fleet Data...</p>
+            <p className="text-xs text-slate-400">Consulting Gemini Intelligence</p>
           </div>
         </div>
       )}

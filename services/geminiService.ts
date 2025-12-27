@@ -3,13 +3,19 @@ import { AppData, Task } from "../types";
 
 const handleApiError = (error: any) => {
   console.error("Gemini API Error:", error);
-  if (error?.message?.includes("429") || error?.status === 429 || error?.message?.toLowerCase().includes("quota")) {
-    return "QUOTA_EXCEEDED: The AI service is currently at capacity or quota limits reached. Please wait a few minutes or check your Gemini API billing plan.";
+  const msg = error?.message || "";
+  if (msg.includes("429") || msg.toLowerCase().includes("quota")) {
+    return "QUOTA_EXCEEDED: The AI service is currently at capacity or quota limits reached. Please wait a few minutes.";
   }
-  return "Unable to generate insights at this time due to a connection error.";
+  if (msg.includes("API_KEY_INVALID") || msg.includes("API key not found")) {
+    return "INVALID_API_KEY: The Gemini API Key is missing or invalid. Check your Netlify environment variables.";
+  }
+  return `API_ERROR: ${msg || "Unable to generate insights at this time."}`;
 };
 
 export const getFleetInsights = async (data: AppData) => {
+  if (!process.env.API_KEY) return "API_KEY_MISSING: Please configure the Gemini API Key in Netlify.";
+  
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const prompt = `
     Analyze this fleet data and provide a concise summary of operational health:
@@ -19,8 +25,8 @@ export const getFleetInsights = async (data: AppData) => {
     Focus on:
     1. Critical maintenance risks.
     2. Operational bottleneck warnings.
-    3. Suggested next priorities for the operations manager.
-    Keep it professional and action-oriented. Max 3 short paragraphs.
+    3. Suggested next priorities.
+    Keep it professional. Max 3 short paragraphs.
   `;
 
   try {
@@ -28,53 +34,15 @@ export const getFleetInsights = async (data: AppData) => {
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
-    return response.text;
-  } catch (error) {
-    return handleApiError(error);
-  }
-};
-
-export const generateOverdueAlert = async (overdueTasks: (Task & { boatName: string, staffNames: string[] })[]) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const taskList = overdueTasks.map(t => `- ID: ${t.id}, Type: ${t.taskType}, Boat: ${t.boatName}, Due: ${t.dueDate}, Assigned: ${t.staffNames.join(', ')}`).join('\n');
-  
-  const prompt = `
-    Draft a professional and urgent alert email to ops@pangeabocas.com regarding these overdue tasks:
-    ${taskList}
-  `;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-    });
-    return response.text;
-  } catch (error) {
-    console.error("Overdue Alert Draft Error:", error);
-    return null;
-  }
-};
-
-export const generateTaskReport = async (task: Task, boatName: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
-  const prompt = `
-    Generate a formal maintenance report for Pangea Bocas.
-    Vessel: ${boatName}, Task: ${task.taskType}, Status: ${task.status}, Notes: ${task.notes || 'None'}.
-  `;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-    });
-    return response.text;
+    return response.text || "The AI generated an empty response. This might be due to safety filters.";
   } catch (error) {
     return handleApiError(error);
   }
 };
 
 export const generateDailyOperationalSummary = async (data: AppData) => {
+  if (!process.env.API_KEY) return "API_KEY_MISSING: Please configure the Gemini API Key in Netlify.";
+
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const today = new Date().toISOString().split('T')[0];
   
@@ -84,8 +52,11 @@ export const generateDailyOperationalSummary = async (data: AppData) => {
   const prompt = `
     Draft a comprehensive daily operational summary for Pangea Bocas.
     Date: ${today}
-    Tours: ${JSON.stringify(todayTours)}
-    Maintenance: ${JSON.stringify(activeTasks)}
+    Tours Dispatched Today: ${JSON.stringify(todayTours)}
+    Active Maintenance: ${JSON.stringify(activeTasks)}
+    Personnel on Duty: ${JSON.stringify(data.personnel.filter(p => p.isActive).map(p => p.name))}
+    
+    Format as a formal business report.
   `;
 
   try {
@@ -93,7 +64,7 @@ export const generateDailyOperationalSummary = async (data: AppData) => {
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
-    return response.text;
+    return response.text || "The AI generated an empty response.";
   } catch (error) {
     return handleApiError(error);
   }
