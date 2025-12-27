@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppData, Boat, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem } from './types.ts';
 import Layout from './components/Layout.tsx';
@@ -17,7 +16,7 @@ import InventoryDashboard from './components/InventoryDashboard.tsx';
 import { INITIAL_DATA_KEY, FULL_FLEET, INITIAL_PERSONNEL } from './constants.ts';
 import { generateDailyOperationalSummary } from './services/geminiService.ts';
 import { syncToSheet, fetchAppData } from './services/sheetService.ts';
-import { generateLogPDF, sendEmailReport } from './services/reportService.ts';
+import { generateAuditLogPDF, sendEmailReport } from './services/reportService.ts';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
@@ -83,7 +82,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (currentUser) {
       refreshData(true);
-      const interval = setInterval(() => refreshData(false), 60000);
+      const interval = setInterval(() => refreshData(false), 60000); 
       return () => clearInterval(interval);
     }
   }, [currentUser, refreshData]);
@@ -102,28 +101,28 @@ const App: React.FC = () => {
     setIsGeneratingReport(true);
     try {
       const today = new Date().toISOString().split('T')[0];
+      const todayLogs = data.logs.filter(l => l.timestamp.includes(today));
       const todayTours = data.tours.filter(t => t.date === today);
       
-      // Fallback if AI fails
-      let summary = "Pangea Operations Daily Summary - Automated Generated Report.\n\n";
+      const doc = generateAuditLogPDF(todayLogs);
+      doc.save(`Pangea_Daily_Full_Report_${today}.pdf`);
+      
+      let aiSummary = "Daily Operations Summary";
       try {
-        summary = await generateDailyOperationalSummary(data);
-      } catch (aiError) {
-        console.warn("AI summary generation failed, using standard format.");
+        aiSummary = await generateDailyOperationalSummary(data);
+      } catch (err) {
+        console.warn("AI Summary failed, using basic layout");
       }
+
+      const emailBody = `PANGEA BOCAS - DAILY OPERATIONAL REPORT\nDate: ${new Date().toDateString()}\n\nAI Summary Insights:\n${aiSummary}\n\nToday's Metrics:\n- Trips Dispatched: ${todayTours.length}\n- Active Logs Recorded: ${todayLogs.length}\n\nNote: The full PDF Audit Log has been downloaded automatically. Please attach it to this email if needed.`;
       
-      const pdf = generateLogPDF(data.logs.filter(l => l.timestamp.includes(today)));
-      pdf.save(`Pangea_Daily_Full_Report_${today}.pdf`);
+      sendEmailReport(`Daily Full Operations Report - ${new Date().toDateString()}`, emailBody);
+      createLog('Report Dispatched', 'Daily Full Operational Summary Report triggered.', 'Fleet');
       
-      const emailBody = `DAILY OPERATIONAL SUMMARY - PANGEA BOCAS\n\nDate: ${new Date().toDateString()}\n\nSummary:\n${summary}\n\nTrips Dispatched Today: ${todayTours.length}\nActive Fleet: ${data.boats.length}\n\nNote: The full PDF Audit Log has been downloaded and should be attached manually for full documentation.`;
-      
-      sendEmailReport(`Daily Operations Report - ${new Date().toDateString()}`, emailBody);
-      
-      createLog('Report Dispatched', 'Daily Full Operational Report triggered.', 'Fleet');
-      alert("Report PDF generated and email draft opened.");
+      alert("Report PDF Generated. Email draft opened.");
     } catch (error) {
-      console.error("Full report failed:", error);
-      alert("Report generation failed. Check connection.");
+      console.error("Report generation failed:", error);
+      alert("Full report generation failed. Check connection.");
     } finally {
       setIsGeneratingReport(false);
     }
@@ -221,8 +220,8 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-white/60 backdrop-blur-md z-50 flex items-center justify-center">
           <div className="bg-white p-12 rounded-[3rem] shadow-2xl border border-slate-100 text-center space-y-4">
             <div className="w-12 h-12 border-4 border-[#ffb519] border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="font-black">Compiling Operations Summary...</p>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Please do not refresh</p>
+            <p className="font-black">Generating Report...</p>
+            <p className="text-xs text-slate-400 font-bold uppercase">Synthesizing operational data</p>
           </div>
         </div>
       )}

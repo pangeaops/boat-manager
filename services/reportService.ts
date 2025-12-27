@@ -1,72 +1,78 @@
-
 import { jsPDF } from 'jspdf';
 import { Tour, AuditLog, AppData, Boat, Personnel } from '../types';
-
-const PANGEA_YELLOW = [255, 181, 25];
-const PANGEA_DARK = [67, 67, 67];
 
 export const generateTourPDF = (tour: Tour, boat?: Boat, captain?: Personnel) => {
   const doc = new jsPDF();
   
-  // Header
-  doc.setFillColor(PANGEA_DARK[0], PANGEA_DARK[1], PANGEA_DARK[2]);
-  doc.rect(0, 0, 210, 40, 'F');
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(24);
-  doc.setFont("helvetica", "bold");
-  doc.text("PANGEA OPS", 20, 20);
+  // Title
+  doc.setFontSize(22);
+  doc.setTextColor(67, 67, 67); // PANGEA_DARK
+  doc.text("PANGEA BOCAS - TRIP REPORT", 20, 25);
   
   doc.setFontSize(10);
-  doc.text("TRIP REPORT / DEPARTURE LOG", 20, 30);
-  
-  doc.setTextColor(PANGEA_YELLOW[0], PANGEA_YELLOW[1], PANGEA_YELLOW[2]);
-  doc.text(`ID: ${tour.id}`, 150, 20);
+  doc.setTextColor(255, 181, 25); // PANGEA_YELLOW
+  doc.text(`TRIP ID: ${tour.id}`, 20, 32);
 
-  // Content
   doc.setTextColor(40, 40, 40);
   doc.setFontSize(12);
-  let y = 55;
+  let y = 45;
 
-  const addField = (label: string, value: string | number) => {
+  const addField = (label: string, value: string | number | undefined) => {
     doc.setFont("helvetica", "bold");
     doc.text(`${label}:`, 20, y);
     doc.setFont("helvetica", "normal");
-    doc.text(`${value}`, 70, y);
-    y += 8;
+    doc.text(`${value || 'N/A'}`, 70, y);
+    y += 10;
   };
 
+  addField("Date", tour.date);
   addField("Vessel", boat?.name || tour.boatId);
   addField("Captain", captain?.name || tour.captainId);
+  addField("PAX Count", tour.paxCount);
+  addField("Tour Type", tour.tourType);
   addField("Route", tour.route);
-  addField("Type", tour.tourType);
-  addField("Date", tour.date);
-  addField("Pax Count", tour.paxCount);
-  addField("Gas Start/End", `${tour.startGas} / ${tour.endGas || 'N/A'}`);
-  
-  y += 10;
+  addField("Departure Time", tour.departureTime);
+  addField("Arrival Time", tour.arrivalTime);
+  addField("Gas Start", tour.startGas);
+  addField("Gas End", tour.endGas);
+
+  y += 5;
   doc.setFont("helvetica", "bold");
-  doc.text("Mechanical & Arrival Notes:", 20, y);
-  y += 6;
+  doc.text("Operational Notes:", 20, y);
+  y += 7;
   doc.setFont("helvetica", "normal");
-  const notes = doc.splitTextToSize(tour.arrivalNotes || tour.generalTripNotes || "No notes provided.", 170);
+  const notes = doc.splitTextToSize(tour.arrivalNotes || tour.generalTripNotes || "No specific notes recorded.", 170);
   doc.text(notes, 20, y);
+  
+  y += (notes.length * 6) + 10;
+  if (tour.mechanicalNotes) {
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(220, 38, 38); // Red
+    doc.text("Mechanical Notes:", 20, y);
+    y += 7;
+    doc.setFont("helvetica", "normal");
+    const mNotes = doc.splitTextToSize(tour.mechanicalNotes, 170);
+    doc.text(mNotes, 20, y);
+  }
 
   return doc;
 };
 
-export const generateLogPDF = (logs: AuditLog[]) => {
+export const generateAuditLogPDF = (logs: AuditLog[]) => {
   const doc = new jsPDF();
   doc.setFontSize(18);
-  doc.text("Pangea Bocas - Audit Log Report", 20, 20);
+  doc.text("PANGEA BOCAS - OPERATIONS AUDIT LOG", 20, 25);
   doc.setFontSize(10);
-  doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 28);
+  doc.text(`Report Generated: ${new Date().toLocaleString()}`, 20, 32);
 
-  let y = 40;
-  logs.forEach((log, i) => {
-    if (y > 270) { doc.addPage(); y = 20; }
+  let y = 45;
+  logs.forEach((log) => {
+    if (y > 270) {
+      doc.addPage();
+      y = 20;
+    }
     doc.setFont("helvetica", "bold");
-    doc.text(`${log.timestamp.split('T')[1].substring(0,5)} - ${log.action}`, 20, y);
+    doc.text(`${log.timestamp.split('T')[1].substring(0, 5)} - ${log.action}`, 20, y);
     doc.setFont("helvetica", "normal");
     doc.text(`[${log.category}] ${log.details}`, 20, y + 5);
     y += 15;

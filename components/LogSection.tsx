@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { AuditLog } from '../types';
-import { generateLogPDF, sendEmailReport } from '../services/reportService';
+import { generateAuditLogPDF, sendEmailReport } from '../services/reportService';
 
 interface LogSectionProps {
   logs: AuditLog[];
@@ -19,15 +18,17 @@ const LogSection: React.FC<LogSectionProps> = ({ logs }) => {
   };
 
   const handleDownloadPDF = () => {
-    const doc = generateLogPDF(logs);
+    const doc = generateAuditLogPDF(logs);
     doc.save(`Pangea_Audit_Log_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   const handleEmailReport = () => {
-    const summary = logs.slice(0, 10).map(l => `${l.timestamp}: ${l.action} - ${l.details}`).join('\n');
+    const today = new Date().toISOString().split('T')[0];
+    const todaysLogs = logs.filter(l => l.timestamp.includes(today));
+    const summary = todaysLogs.map(l => `${l.timestamp.split('T')[1].substring(0,5)}: ${l.action} - ${l.details}`).join('\n');
     sendEmailReport(
-      "Pangea Bocas Audit Log Report", 
-      `Operational Audit Summary:\n\n${summary}\n\nFull log attached in system files.`
+      `Pangea Audit Log Summary - ${today}`,
+      `Operational activity summary for today:\n\n${summary || "No activity recorded for today."}\n\nFull log available in system archives.`
     );
   };
 
@@ -43,13 +44,13 @@ const LogSection: React.FC<LogSectionProps> = ({ logs }) => {
             onClick={handleDownloadPDF}
             className="bg-white border border-slate-200 text-slate-700 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center space-x-2"
           >
-            <span>📄 PDF Audit</span>
+            <span>📄 Download PDF</span>
           </button>
           <button 
             onClick={handleEmailReport}
             className="bg-[#434343] text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all flex items-center space-x-2 shadow-lg"
           >
-            <span>📧 Email Log</span>
+            <span>📧 Email Today's Log</span>
           </button>
         </div>
       </header>
