@@ -40,7 +40,6 @@ const App: React.FC = () => {
     };
   });
 
-  // Function to pull latest data from cloud
   const refreshData = useCallback(async (showIndicator = false) => {
     if (!currentUser) return;
     if (showIndicator) setIsSyncing(true);
@@ -51,7 +50,6 @@ const App: React.FC = () => {
         setData(prev => ({
           ...prev,
           ...remoteData,
-          // Robust Data Merging: prioritize remote data for fleet-wide truth
           logs: remoteData.logs || prev.logs,
           boats: remoteData.boats || prev.boats,
           tasks: remoteData.tasks || prev.tasks,
@@ -61,7 +59,6 @@ const App: React.FC = () => {
         }));
         setLastSync(new Date());
 
-        // Automation Logic: Check for periodic report needs
         const { needsDaily, needsWeekly } = checkReportStatus(remoteData);
         if (needsWeekly) setPendingReport('weekly');
         else if (needsDaily) setPendingReport('daily');
@@ -73,18 +70,16 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
-  // Aggressive Polling: 10 seconds for real-time multi-user feel
   useEffect(() => {
     if (currentUser) {
       refreshData(true);
       const interval = setInterval(() => {
         refreshData();
-      }, 10000); 
+      }, 15000); 
       return () => clearInterval(interval);
     }
   }, [currentUser, refreshData]);
 
-  // Save to local storage for offline resilience
   useEffect(() => {
     localStorage.setItem(INITIAL_DATA_KEY, JSON.stringify(data));
   }, [data]);
@@ -130,16 +125,16 @@ const App: React.FC = () => {
   const addPersonnel = async (person: Personnel) => {
     setData(prev => ({ ...prev, personnel: [...prev.personnel, person] }));
     createLog('Personnel Added', `${person.name} onboarded.`, 'Personnel');
-    // Ensure new personnel info is sent to sheets immediately
-    await syncToSheet('Personnel', person);
+    // Using 'Personnel Info' to match user's sheet tab naming
+    await syncToSheet('Personnel Info', person);
     setActiveTab('personnel_hub');
   };
 
   const updatePersonnel = async (person: Personnel) => {
     setData(prev => ({ ...prev, personnel: prev.personnel.map(p => p.id === person.id ? person : p) }));
     createLog('Personnel Updated', `${person.name} profile modified.`, 'Personnel');
-    // Ensure updated personnel info is sent to sheets immediately
-    await syncToSheet('Personnel', person);
+    // Using 'Personnel Info' to match user's sheet tab naming
+    await syncToSheet('Personnel Info', person);
   };
 
   const addTour = (tour: Tour) => {

@@ -4,7 +4,6 @@
  * Live connection established to: Pangea Bocas Apps Script Bridge
  */
 
-// Updated to the latest bridge URL provided to ensure data flows to the correct sheet
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyK2c-jGvMxuoimp5nj1m_vfclV5cGY9h28oonObGQyJ46qpxlHmIThfJ5-3Svh6bL5w/exec";
 
 export const syncToSheet = async (sheetName: string, data: any) => {
@@ -14,15 +13,26 @@ export const syncToSheet = async (sheetName: string, data: any) => {
   }
 
   try {
-    console.info(`Cloud Sync Initiated: [${sheetName}] for ${data.name || data.id}`);
-    
-    // Automatically detect arrays or objects and convert them to JSON strings
-    // This prevents the [Ljava.lang.Object;@... error in Google Sheets.
-    const sanitizedData = Object.keys(data).reduce((acc, key) => {
-      const val = data[key];
-      acc[key] = (typeof val === 'object' && val !== null) ? JSON.stringify(val) : val;
-      return acc;
-    }, {} as any);
+    // 1. Deep clean data: remove undefined values and serialize nested objects
+    // This reduces payload size and avoids "undefined" string values in Sheets
+    const cleanData = (obj: any): any => {
+      const result: any = {};
+      Object.keys(obj).forEach(key => {
+        const value = obj[key];
+        if (value === undefined || value === null) return;
+        
+        if (Array.isArray(value)) {
+          result[key] = JSON.stringify(value);
+        } else if (typeof value === 'object') {
+          result[key] = JSON.stringify(value);
+        } else {
+          result[key] = value;
+        }
+      });
+      return result;
+    };
+
+    const sanitizedData = cleanData(data);
 
     const payload = {
       method: "update",
@@ -30,27 +40,43 @@ export const syncToSheet = async (sheetName: string, data: any) => {
       data: {
         ...sanitizedData,
         _lastUpdated: new Date().toISOString(),
-        _clientSource: 'PangeaOps-Web'
+        _clientSource: 'PangeaOps-Netlify'
       }
     };
 
-    // We use 'text/plain' to ensure a "Simple Request". 
-    // This is the most reliable way to send POST data to Google Apps Script 
-    // as it avoids complex CORS preflight checks that often fail on GAS redirects.
+    const jsonPayload = JSON.stringify(payload);
+    const payloadSize = new Blob([jsonPayload]).size;
+
+    console.info(`[PangeaCloud] Dispatching ${sheetName} update... (${(payloadSize / 1024).toFixed(2)} KB)`);
+
+    if (payloadSize > 5 * 1024 * 1024) {
+      console.warn("[PangeaCloud] Warning: Payload size is large. Base64 images may cause timeouts in Google Apps Script.");
+    }
+
+    /**
+     * CRITICAL: We use 'no-cors' mode with 'text/plain'.
+     * This makes the request a "Simple Request" according to CORS spec.
+     * Netlify (Production) environment strictly enforces CORS. 
+     * Google Apps Script does not return correct CORS headers for preflight OPTIONS.
+     * Using 'no-cors' allows the POST to hit the script without an OPTIONS check.
+     */
     await fetch(SCRIPT_URL, {
       method: 'POST',
       mode: 'no-cors', 
       cache: 'no-cache',
+      credentials: 'omit',
       headers: { 
         'Content-Type': 'text/plain' 
       },
-      body: JSON.stringify(payload),
+      body: jsonPayload,
     });
 
-    console.log(`Cloud Sync Success: [${sheetName}]`);
+    // Note: With 'no-cors', we cannot read the response body or status.
+    // We assume success if the fetch promise resolves without throwing.
+    console.log(`[PangeaCloud] Sync command accepted for [${sheetName}]`);
     return true;
   } catch (error) {
-    console.error(`Cloud Sync Failure [${sheetName}]:`, error);
+    console.error(`[PangeaCloud] Sync failed for [${sheetName}]:`, error);
     return false;
   }
 };
@@ -59,10 +85,6 @@ export const fetchAppData = async () => {
   if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_GOOGLE_APPS_SCRIPT_URL_HERE")) return null;
 
   try {
-    // Standard GET request to fetch latest data.
-    // mode: 'cors' is required to read the response body.
-    // credentials: 'omit' and redirect: 'follow' are used to handle the 302 redirect 
-    // that Google Apps Script uses to send the actual JSON payload.
     const response = await fetch(`${SCRIPT_URL}?t=${Date.now()}`, {
       method: 'GET',
       mode: 'cors',
@@ -72,16 +94,14 @@ export const fetchAppData = async () => {
     });
 
     if (!response.ok) {
-      console.warn(`Cloud Bridge returned error ${response.status}. Ensure GAS script is published to 'Anyone'.`);
+      console.warn(`[PangeaCloud] Fetch returned status ${response.status}`);
       return null;
     }
 
     const remoteData = await response.json();
     return remoteData;
   } catch (error) {
-    // If you still see "Failed to fetch", verify the Apps Script is published 
-    // with: "Execute as: Me" and "Who has access: Anyone".
-    console.error("Cloud Fetch Error: Failed to fetch. Ensure script is published to 'Anyone' and CORS is allowed.", error);
+    console.error("[PangeaCloud] Fetch error:", error);
     return null;
   }
 };
