@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppData, Boat, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem } from './types.ts';
 import Layout from './components/Layout.tsx';
 import Dashboard from './components/Dashboard.tsx';
@@ -23,6 +23,8 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [editingBoat, setEditingBoat] = useState<Boat | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   const [data, setData] = useState<AppData>(() => {
     const saved = localStorage.getItem(INITIAL_DATA_KEY);
@@ -36,18 +38,47 @@ const App: React.FC = () => {
     };
   });
 
-  useEffect(() => {
-    if (currentUser) {
-      const loadRemote = async () => {
-        const remoteData = await fetchAppData();
-        if (remoteData) {
-          setData(prev => ({ ...prev, ...remoteData }));
-        }
-      };
-      loadRemote();
+  // Function to pull latest data from cloud
+  const refreshData = useCallback(async (showIndicator = false) => {
+    if (!currentUser) return;
+    if (showIndicator) setIsSyncing(true);
+    
+    try {
+      const remoteData = await fetchAppData();
+      if (remoteData) {
+        setData(prev => ({
+          ...prev,
+          ...remoteData,
+          // Ensure we don't lose local-only state like logs if the sheet doesn't have them
+          logs: remoteData.logs || prev.logs,
+          boats: remoteData.boats || prev.boats,
+          tasks: remoteData.tasks || prev.tasks,
+          personnel: remoteData.personnel || prev.personnel,
+          tours: remoteData.tours || prev.tours,
+          inventory: remoteData.inventory || prev.inventory,
+        }));
+        setLastSync(new Date());
+      }
+    } catch (err) {
+      console.error("Background sync failed", err);
+    } finally {
+      setIsSyncing(false);
     }
   }, [currentUser]);
 
+  // Initial load and setup polling
+  useEffect(() => {
+    if (currentUser) {
+      refreshData(true);
+      // Poll every 30 seconds for changes from other users
+      const interval = setInterval(() => {
+        refreshData();
+      }, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [currentUser, refreshData]);
+
+  // Save to local storage for offline resilience
   useEffect(() => {
     localStorage.setItem(INITIAL_DATA_KEY, JSON.stringify(data));
   }, [data]);
@@ -134,7 +165,6 @@ const App: React.FC = () => {
       const summary = await generateDailyOperationalSummary(data);
       if (!summary) throw new Error("The AI service returned no data.");
       
-      // If summary starts with error codes from geminiService
       if (summary.includes("API_KEY_MISSING") || summary.includes("QUOTA_EXCEEDED") || summary.includes("API_ERROR")) {
         alert(summary);
         return;
@@ -192,7 +222,14 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout activeTab={activeTab} setActiveTab={setActiveTab} user={currentUser} onLogout={() => setCurrentUser(null)}>
+    <Layout 
+      activeTab={activeTab} 
+      setActiveTab={setActiveTab} 
+      user={currentUser} 
+      onLogout={() => setCurrentUser(null)}
+      isSyncing={isSyncing}
+      lastSync={lastSync}
+    >
       {isGeneratingReport && (
         <div className="fixed inset-0 bg-white/60 backdrop-blur-md z-50 flex items-center justify-center">
           <div className="bg-white p-12 rounded-[3rem] shadow-2xl border border-slate-100 text-center space-y-4">

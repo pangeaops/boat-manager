@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { PANGEA_YELLOW, PANGEA_DARK } from '../constants';
 import { AppUser } from '../types';
@@ -9,9 +8,19 @@ interface LayoutProps {
   setActiveTab: (tab: string) => void;
   user: AppUser;
   onLogout: () => void;
+  isSyncing?: boolean;
+  lastSync?: Date | null;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user, onLogout }) => {
+const Layout: React.FC<LayoutProps> = ({ 
+  children, 
+  activeTab, 
+  setActiveTab, 
+  user, 
+  onLogout,
+  isSyncing,
+  lastSync
+}) => {
   const allNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊', minRole: 'Staff' },
     { id: 'admin_dashboard', label: 'Admin Analytics', icon: '📈', minRole: 'Admin' },
@@ -42,13 +51,28 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
           </div>
         </div>
         
-        <div className="px-8 pb-4 mb-4 border-b border-slate-200">
+        <div className="px-8 pb-4 mb-4 border-b border-slate-200 space-y-3">
            <div className="flex items-center space-x-3 p-3 bg-white rounded-2xl shadow-sm border border-slate-100">
              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-sm">👤</div>
              <div className="overflow-hidden">
                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">{user.role}</p>
                <p className="text-xs font-black truncate text-slate-700">{user.name}</p>
              </div>
+           </div>
+
+           {/* Cloud Sync Status Indicator */}
+           <div className="flex items-center justify-between px-2">
+             <div className="flex items-center space-x-2">
+               <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-green-500'}`}></div>
+               <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest">
+                 {isSyncing ? 'Syncing...' : 'Cloud Connected'}
+               </span>
+             </div>
+             {lastSync && (
+               <span className="text-[8px] font-bold text-slate-300">
+                 {lastSync.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+               </span>
+             )}
            </div>
         </div>
         
