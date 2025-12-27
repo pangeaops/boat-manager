@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppData, Boat, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem } from './types.ts';
 import Layout from './components/Layout.tsx';
 import Dashboard from './components/Dashboard.tsx';
@@ -26,6 +26,8 @@ const App: React.FC = () => {
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   
+  const isFetchingRef = useRef(false);
+
   const [data, setData] = useState<AppData>(() => {
     const saved = localStorage.getItem(INITIAL_DATA_KEY);
     return saved ? JSON.parse(saved) : { 
@@ -38,61 +40,71 @@ const App: React.FC = () => {
     };
   });
 
-  // Function to pull latest data from cloud
   const refreshData = useCallback(async (showIndicator = false) => {
-    if (!currentUser) return;
+    if (!currentUser || isFetchingRef.current) return;
+    
+    isFetchingRef.current = true;
     if (showIndicator) setIsSyncing(true);
     
     try {
       const remoteData = await fetchAppData();
       if (remoteData) {
-        setData(prev => ({
-          ...prev,
-          ...remoteData,
-          // Ensure we don't lose local-only state like logs if the sheet doesn't have them
-          logs: remoteData.logs || prev.logs,
-          boats: remoteData.boats || prev.boats,
-          tasks: remoteData.tasks || prev.tasks,
-          personnel: remoteData.personnel || prev.personnel,
-          tours: remoteData.tours || prev.tours,
-          inventory: remoteData.inventory || prev.inventory,
-        }));
+        setData(prev => {
+          // Normalize names: App uses keys like Boats/AuditLogs based on sheet names
+          const remoteBoats = remoteData.Boats || remoteData.boats;
+          const remoteTours = remoteData.Tours || remoteData.tours;
+          const remotePersonnel = remoteData.Personnel || remoteData.personnel;
+          const remoteInventory = remoteData.Inventory || remoteData.inventory;
+          const remoteLogs = remoteData.AuditLogs || remoteData.logs;
+
+          const combinedLogs = [...(remoteLogs || []), ...prev.logs];
+          const uniqueLogs = Array.from(new Map(combinedLogs.map(item => [item.id, item])).values())
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .slice(0, 100);
+
+          return {
+            ...prev,
+            boats: remoteBoats || prev.boats,
+            tours: remoteTours || prev.tours,
+            personnel: remotePersonnel || prev.personnel,
+            inventory: remoteInventory || prev.inventory,
+            logs: uniqueLogs as AuditLog[]
+          };
+        });
         setLastSync(new Date());
       }
     } catch (err) {
-      console.error("Background sync failed", err);
+      // Silently fail for background updates to avoid annoying the user
+      if (showIndicator) console.error("Cloud background sync failed:", err);
     } finally {
-      setIsSyncing(false);
+      isFetchingRef.current = false;
+      if (showIndicator) setIsSyncing(false);
     }
   }, [currentUser]);
 
-  // Initial load and setup polling
   useEffect(() => {
     if (currentUser) {
       refreshData(true);
-      // Poll every 30 seconds for changes from other users
       const interval = setInterval(() => {
-        refreshData();
-      }, 30000);
+        refreshData(false);
+      }, 30000); // Check every 30 seconds
       return () => clearInterval(interval);
     }
   }, [currentUser, refreshData]);
 
-  // Save to local storage for offline resilience
   useEffect(() => {
     localStorage.setItem(INITIAL_DATA_KEY, JSON.stringify(data));
   }, [data]);
 
   const createLog = (action: string, details: string, category: AuditLog['category']) => {
-    const newLog: AuditLog = {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toISOString(),
-      action,
-      details,
-      category
-    };
-    setData(prev => ({ ...prev, logs: [...prev.logs, newLog] }));
-    syncToSheet('AuditLogs', { ...newLog, user: currentUser?.name || 'System' });
+    const timestamp = new Date().toISOString();
+    const id = Math.random().toString(36).substr(2, 9);
+    const userName = currentUser?.name || 'System';
+
+    const newLogEntry = { id, timestamp, action, details, category, user: userName };
+    
+    setData(prev => ({ ...prev, logs: [newLogEntry as AuditLog, ...prev.logs].slice(0, 100) }));
+    syncToSheet('AuditLogs', newLogEntry);
   };
 
   const handleUpdateBoatStatus = (boatId: string, status: BoatStatus) => {
@@ -165,28 +177,17 @@ const App: React.FC = () => {
       const summary = await generateDailyOperationalSummary(data);
       if (!summary) throw new Error("The AI service returned no data.");
       
-      if (summary.includes("API_KEY_MISSING") || summary.includes("QUOTA_EXCEEDED") || summary.includes("API_ERROR")) {
-        alert(summary);
-        return;
-      }
-
       const doc = new jsPDF();
       const splitText = doc.splitTextToSize(summary, 170);
       let y = 30;
-      
       doc.setFontSize(16);
       doc.text("Pangea Bocas Daily Operational Report", 20, 20);
       doc.setFontSize(10);
-      
       splitText.forEach((line: string) => {
-        if (y > 280) {
-          doc.addPage();
-          y = 20;
-        }
+        if (y > 280) { doc.addPage(); y = 20; }
         doc.text(line, 20, y);
         y += 7;
       });
-
       doc.save(`Pangea_Ops_${new Date().toISOString().split('T')[0]}.pdf`);
       createLog('Full Report Exported', 'Operational PDF generated.', 'Tour');
     } catch (err: any) { 
@@ -202,7 +203,7 @@ const App: React.FC = () => {
   const renderContent = () => {
     if (editingBoat) return <AddBoatForm initialData={editingBoat} onAddBoat={addBoat} onCancel={() => setEditingBoat(null)} />;
     switch (activeTab) {
-      case 'dashboard': return <Dashboard data={data} onSendFullDailyReport={handleSendFullDailyReport} />;
+      case 'dashboard': return <Dashboard data={data} onSendFullDailyReport={handleSendFullDailyReport} onManualSync={() => refreshData(true)} />;
       case 'fleet': return <BoatDashboard data={data} userRole={currentUser.role} onUpdateTaskStatus={() => {}} onEditBoat={setEditingBoat} onUpdateBoatStatus={handleUpdateBoatStatus} />;
       case 'tours': return <TourLogForm data={data} onAddTour={addTour} onUpdateTour={updateTour} />;
       case 'inventory': return <InventoryDashboard data={data} onUpdateInventory={updateInventory} />;
@@ -217,7 +218,7 @@ const App: React.FC = () => {
           {currentUser.role === 'Admin' ? <AddPersonnelForm onAddPersonnel={addPersonnel} /> : <div>Admin access required.</div>}
         </div>
       );
-      default: return <Dashboard data={data} onSendFullDailyReport={handleSendFullDailyReport} />;
+      default: return <Dashboard data={data} onSendFullDailyReport={handleSendFullDailyReport} onManualSync={() => refreshData(true)} />;
     }
   };
 

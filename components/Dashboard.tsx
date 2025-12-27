@@ -5,9 +5,10 @@ import { getFleetInsights } from '../services/geminiService';
 interface DashboardProps {
   data: AppData;
   onSendFullDailyReport: () => void;
+  onManualSync?: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport }) => {
+const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, onManualSync }) => {
   const [insights, setInsights] = useState<string>('');
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [lastFetched, setLastFetched] = useState<number>(0);
@@ -67,7 +68,13 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport }) =>
           <h2 className="text-4xl font-black text-slate-900 tracking-tight">Operations Dashboard</h2>
           <p className="text-slate-500 font-medium">Real-time command center for Pangea Bocas.</p>
         </div>
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3">
+          <button 
+            onClick={onManualSync}
+            className="bg-white border border-slate-200 text-slate-600 px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center space-x-2 active:scale-95"
+          >
+            <span>🔄 Force Sync</span>
+          </button>
           <button 
             onClick={onSendFullDailyReport}
             className="bg-[#434343] text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-xl flex items-center space-x-3 active:scale-95"
