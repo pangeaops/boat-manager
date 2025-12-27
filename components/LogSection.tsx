@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { AppData, AuditLog } from '../types';
+import { AuditLog } from '../types';
 
 interface LogSectionProps {
   logs: AuditLog[];

@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { Personnel, PersonnelRole, InactiveReason } from '../types';
-import { PANGEA_YELLOW, PANGEA_DARK } from '../constants';
+import { PANGEA_YELLOW } from '../constants';
 
 interface AddPersonnelFormProps {
   onAddPersonnel: (person: Personnel) => void;
@@ -105,7 +104,7 @@ const AddPersonnelForm: React.FC<AddPersonnelFormProps> = ({ onAddPersonnel, ini
               <div className="relative group w-40 h-40">
                 <div className="w-full h-full rounded-[2.5rem] bg-slate-100 flex items-center justify-center overflow-hidden border-2 border-dashed border-slate-200 group-hover:border-[#ffb519] transition-all">
                   {formData.profilePhoto ? (
-                    <img src={formData.profilePhoto} className="w-full h-full object-cover" />
+                    <img src={formData.profilePhoto} className="w-full h-full object-cover" alt="Profile" />
                   ) : (
                     <span className="text-3xl">📷</span>
                   )}
@@ -202,7 +201,7 @@ const AddPersonnelForm: React.FC<AddPersonnelFormProps> = ({ onAddPersonnel, ini
                 <label className="text-[10px] font-black uppercase text-slate-400 block">License Card Photo</label>
                 <div className="h-40 bg-white rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center relative group">
                   {formData.licensePhoto ? (
-                    <img src={formData.licensePhoto} className="w-full h-full object-contain rounded-2xl" />
+                    <img src={formData.licensePhoto} className="w-full h-full object-contain rounded-2xl" alt="License" />
                   ) : (
                     <div className="text-center">
                       <span className="text-2xl">📸</span>

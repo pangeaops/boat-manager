@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { AppData, Priority, Task } from '../types';
-import { MAINTENANCE_TASKS, PANGEA_YELLOW, PANGEA_DARK } from '../constants';
+import { MAINTENANCE_TASKS, PANGEA_YELLOW } from '../constants';
 
 interface MaintenanceFormProps {
   data: AppData;

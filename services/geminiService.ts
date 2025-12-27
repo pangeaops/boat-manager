@@ -1,6 +1,5 @@
-
 import { GoogleGenAI } from "@google/genai";
-import { AppData, Task, Tour, AuditLog } from "../types";
+import { AppData, Task } from "../types";
 
 const handleApiError = (error: any) => {
   console.error("Gemini API Error:", error);
@@ -56,7 +55,7 @@ export const generateOverdueAlert = async (overdueTasks: (Task & { boatName: str
   }
 };
 
-export const generateTaskReport = async (task: Task, boatName: string, staffNames: string[]) => {
+export const generateTaskReport = async (task: Task, boatName: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `

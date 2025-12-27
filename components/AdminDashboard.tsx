@@ -1,7 +1,6 @@
-
 import React from 'react';
-import { AppData, Tour } from '../types';
-import { PANGEA_YELLOW, PANGEA_DARK } from '../constants';
+import { AppData } from '../types';
+import { PANGEA_DARK } from '../constants';
 
 interface AdminDashboardProps {
   data: AppData;
@@ -55,7 +54,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ data }) => {
       <div className="flex items-center space-x-10">
         <div className="relative w-32 h-32">
           <svg viewBox="0 0 32 32" className="w-full h-full transform -rotate-90">
-            {/* Fix: Using React.ReactElement[] instead of JSX.Element[] to resolve 'Cannot find namespace JSX' error */}
             {items.reduce((acc, item, i) => {
               const prev = acc.total;
               const strokeDasharray = `${item.value} 100`;
@@ -155,7 +153,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ data }) => {
               return (
                 <div key={captain.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6 flex flex-col items-center text-center">
                    <div className="w-16 h-16 rounded-2xl bg-slate-800 text-white flex items-center justify-center text-2xl overflow-hidden">
-                      {captain.profilePhoto ? <img src={captain.profilePhoto} className="w-full h-full object-cover" /> : '👤'}
+                      {captain.profilePhoto ? <img src={captain.profilePhoto} className="w-full h-full object-cover" alt={captain.name} /> : '👤'}
                    </div>
                    <div>
                       <h4 className="font-black text-slate-800 leading-tight">{captain.name}</h4>

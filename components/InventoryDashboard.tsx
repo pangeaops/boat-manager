@@ -1,7 +1,5 @@
-
 import React, { useState } from 'react';
 import { AppData, InventoryItem } from '../types';
-import { PANGEA_YELLOW, PANGEA_DARK } from '../constants';
 
 interface InventoryDashboardProps {
   data: AppData;

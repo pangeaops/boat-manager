@@ -1,7 +1,6 @@
-
 import React from 'react';
-import { AppData, Boat, Task, Priority, BoatStatus, UserRole } from '../types';
-import { PANGEA_YELLOW, PANGEA_DARK, FLEET_REFERENCE_DATA, BASE_GAS_RATE, BOAT_STATUS_OPTIONS } from '../constants';
+import { AppData, Boat, Task, BoatStatus, UserRole } from '../types';
+import { PANGEA_DARK, BOAT_STATUS_OPTIONS } from '../constants';
 
 interface BoatDashboardProps {
   data: AppData;

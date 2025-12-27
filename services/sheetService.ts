@@ -4,7 +4,7 @@
  * Live connection established to: Pangea Bocas Apps Script Bridge
  */
 
-const SCRIPT_URL = "https://script.google.com/a/macros/pangeabocas.com/s/AKfycbyqGqfpwtPUBQSIQG19tmGSsVeznrqEBannT--dYep--mQuEhQItF_azuWVAJhwFbtH3w/exec";
+const SCRIPT_URL = "https://script.google.com/a/macros/pangeabocas.com/s/AKfycbzhuuI1RqJIoFkJbFPGl0-gCXnb9u7ieR33hk-gzYuYLdhdIFP6aVbTG803LjbCcjxgzQ/exec";
 
 export const syncToSheet = async (sheetName: string, data: any) => {
   if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_GOOGLE_APPS_SCRIPT_URL_HERE")) {

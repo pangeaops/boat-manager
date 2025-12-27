@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { AppUser } from '../types';
-import { PANGEA_YELLOW, PANGEA_DARK } from '../constants';
+import { PANGEA_YELLOW } from '../constants';
 
 interface LoginProps {
   onLogin: (user: AppUser) => void;

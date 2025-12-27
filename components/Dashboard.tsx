@@ -1,8 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
-import { AppData, Priority, Boat, Tour, BoatStatus } from '../types';
+import { AppData, Priority } from '../types';
 import { getFleetInsights } from '../services/geminiService';
-import { PANGEA_YELLOW, PANGEA_DARK } from '../constants';
 
 interface DashboardProps {
   data: AppData;

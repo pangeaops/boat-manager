@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
-import { Boat } from '../types';
-import { PANGEA_YELLOW, MANDATORY_ITEMS } from '../constants';
+import { Boat } from '../types.ts';
+import { PANGEA_YELLOW, MANDATORY_ITEMS } from '../constants.ts';
 
 interface AddBoatFormProps {
   onAddBoat: (boat: Boat) => void;
@@ -46,9 +45,10 @@ const AddBoatForm: React.FC<AddBoatFormProps> = ({ onAddBoat, initialData, onCan
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const finalId = initialData?.id || formData.id || Math.random().toString(36).substr(2, 9);
     onAddBoat({
-      id: initialData?.id || Math.random().toString(36).substr(2, 9),
       ...formData as Boat,
+      id: finalId,
       mandatoryChecklist: initialData?.mandatoryChecklist || MANDATORY_ITEMS
     });
   };

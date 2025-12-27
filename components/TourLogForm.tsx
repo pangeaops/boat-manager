@@ -1,6 +1,5 @@
-
 import React, { useState, useMemo } from 'react';
-import { AppData, Tour, ProvisionStock, WildlifeEncounter, PostTripChecklist, PreDepartureVerification, PersonnelRole } from '../types';
+import { AppData, Tour, ProvisionStock, WildlifeEncounter, PostTripChecklist, PreDepartureVerification } from '../types';
 import { PANGEA_YELLOW, PANGEA_DARK, TOUR_TYPES, TOUR_ROUTES, INITIAL_PROVISIONS } from '../constants';
 
 interface TourLogFormProps {
@@ -538,7 +537,6 @@ const TourLogForm: React.FC<TourLogFormProps> = ({ data, onAddTour, onUpdateTour
                       <input type="number" value={prov.arrivalQty} onChange={e => {
                         const newProvs = [...arrivalForm.provisions];
                         newProvs[i].arrivalQty = parseInt(e.target.value) || 0;
-                        setArrivalForm({...arrivalForm, provisions: i === 0 ? newProvs : newProvs}); // dummy
                         setArrivalForm({...arrivalForm, provisions: newProvs});
                       }} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-2 py-1 text-center font-black text-xs" />
                    </div>
