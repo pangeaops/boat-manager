@@ -127,17 +127,19 @@ const App: React.FC = () => {
     setActiveTab('fleet');
   };
 
-  const addPersonnel = (person: Personnel) => {
+  const addPersonnel = async (person: Personnel) => {
     setData(prev => ({ ...prev, personnel: [...prev.personnel, person] }));
     createLog('Personnel Added', `${person.name} onboarded.`, 'Personnel');
-    syncToSheet('Personnel', person);
+    // Ensure new personnel info is sent to sheets immediately
+    await syncToSheet('Personnel', person);
     setActiveTab('personnel_hub');
   };
 
-  const updatePersonnel = (person: Personnel) => {
+  const updatePersonnel = async (person: Personnel) => {
     setData(prev => ({ ...prev, personnel: prev.personnel.map(p => p.id === person.id ? person : p) }));
     createLog('Personnel Updated', `${person.name} profile modified.`, 'Personnel');
-    syncToSheet('Personnel', person);
+    // Ensure updated personnel info is sent to sheets immediately
+    await syncToSheet('Personnel', person);
   };
 
   const addTour = (tour: Tour) => {

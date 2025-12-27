@@ -4,7 +4,7 @@
  * Live connection established to: Pangea Bocas Apps Script Bridge
  */
 
-// Updated to the URL provided in the latest request to ensure proper access permissions
+// Updated to the latest bridge URL provided to ensure data flows to the correct sheet
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyK2c-jGvMxuoimp5nj1m_vfclV5cGY9h28oonObGQyJ46qpxlHmIThfJ5-3Svh6bL5w/exec";
 
 export const syncToSheet = async (sheetName: string, data: any) => {
@@ -14,6 +14,8 @@ export const syncToSheet = async (sheetName: string, data: any) => {
   }
 
   try {
+    console.info(`Cloud Sync Initiated: [${sheetName}] for ${data.name || data.id}`);
+    
     // Automatically detect arrays or objects and convert them to JSON strings
     // This prevents the [Ljava.lang.Object;@... error in Google Sheets.
     const sanitizedData = Object.keys(data).reduce((acc, key) => {
@@ -45,7 +47,7 @@ export const syncToSheet = async (sheetName: string, data: any) => {
       body: JSON.stringify(payload),
     });
 
-    console.log(`Cloud Sync Sent: [${sheetName}]`);
+    console.log(`Cloud Sync Success: [${sheetName}]`);
     return true;
   } catch (error) {
     console.error(`Cloud Sync Failure [${sheetName}]:`, error);
