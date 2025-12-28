@@ -169,40 +169,39 @@ const App: React.FC = () => {
 
   const syncAllPersonnel = async () => {
     setIsSyncing(true);
-    // 1. Log the initiation
+    // 1. Audit Log initiation
     const startLog: AuditLog = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date().toISOString(),
       action: 'Bulk Sync Triggered',
-      details: `Mapping ${data.personnel.length} staff profiles to Cloud Headers`,
+      details: `Dispatched ${data.personnel.length} staff records using strict CSV headers.`,
       category: 'Personnel'
     };
     setData(prev => ({ ...prev, logs: [...prev.logs, startLog] }));
     await syncToSheet('AuditLogs', { ...startLog, user: currentUser?.name || 'System' });
 
     try {
-      // 2. Loop through and sync each record
+      // 2. Loop through and sync each record with higher delay to prevent script collisions
       for (const person of data.personnel) {
         await syncToSheet('Personnel', person);
-        // Sequential pacing (400ms) prevents Google Apps Script collisions
-        await new Promise(resolve => setTimeout(resolve, 400)); 
+        await new Promise(resolve => setTimeout(resolve, 800)); 
       }
       
-      // 3. Log the successful conclusion
+      // 3. Final log
       const endLog: AuditLog = {
         id: Math.random().toString(36).substr(2, 9),
         timestamp: new Date().toISOString(),
         action: 'Bulk Sync Completed',
-        details: `Verified ${data.personnel.length} rows updated in Cloud`,
+        details: `Verified ${data.personnel.length} personnel records synced.`,
         category: 'Personnel'
       };
       setData(prev => ({ ...prev, logs: [...prev.logs, endLog] }));
       await syncToSheet('AuditLogs', { ...endLog, user: currentUser?.name || 'System' });
       
-      alert(`Success: All ${data.personnel.length} personnel files have been mapped and synchronized to the Google Sheet.`);
+      alert(`Sink Complete: All ${data.personnel.length} personnel records have been updated in the Sheet.`);
     } catch (err) {
-      console.error("Bulk sync error", err);
-      alert("Synchronization interrupted. Some records may not have synced.");
+      console.error("Bulk sink interrupted", err);
+      alert("Cloud connection timed out during bulk operation.");
     } finally {
       setIsSyncing(false);
     }
