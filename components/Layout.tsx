@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { PANGEA_YELLOW, PANGEA_DARK } from '../constants';
-import { AppUser } from '../types';
+import { AppUser, AppData } from '../types';
+import { checkCompliance } from '../services/complianceService';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,6 +12,7 @@ interface LayoutProps {
   isSyncing?: boolean;
   lastSync?: Date | null;
   pendingReport?: 'daily' | 'weekly' | null;
+  data: AppData;
 }
 
 const Layout: React.FC<LayoutProps> = ({ 
@@ -21,16 +23,23 @@ const Layout: React.FC<LayoutProps> = ({
   onLogout,
   isSyncing,
   lastSync,
-  pendingReport
+  pendingReport,
+  data
 }) => {
+  const complianceAlerts = useMemo(() => checkCompliance(data), [data]);
+  const boatAlerts = complianceAlerts.filter(a => a.type === 'Boat').length;
+  const staffAlerts = complianceAlerts.filter(a => a.type === 'Staff').length;
+  const tourAlerts = complianceAlerts.filter(a => a.type === 'Tour').length;
+  const taskAlerts = complianceAlerts.filter(a => a.type === 'Task' && a.severity === 'Critical').length;
+
   const allNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊', minRole: 'Staff' },
     { id: 'admin_dashboard', label: 'Admin Analytics', icon: '📈', minRole: 'Admin' },
-    { id: 'fleet', label: 'Fleet Hub', icon: '🛥️', minRole: 'Staff' },
-    { id: 'tours', label: 'Daily Tours', icon: '📅', minRole: 'Staff' },
+    { id: 'fleet', label: 'Fleet Hub', icon: '🛥️', minRole: 'Staff', badge: boatAlerts },
+    { id: 'tours', label: 'Daily Tours', icon: '📅', minRole: 'Staff', badge: tourAlerts },
     { id: 'inventory', label: 'Inventory Hub', icon: '📦', minRole: 'Staff' },
-    { id: 'personnel_hub', label: 'Staff Hub', icon: '👤', minRole: 'Staff' },
-    { id: 'maintenance', label: 'Maintenance', icon: '🔧', minRole: 'Staff' },
+    { id: 'personnel_hub', label: 'Staff Hub', icon: '👤', minRole: 'Staff', badge: staffAlerts },
+    { id: 'maintenance', label: 'Maintenance', icon: '🔧', minRole: 'Staff', badge: taskAlerts },
     { id: 'protocols', label: 'Safety & Eco', icon: '🛡️', minRole: 'Staff' },
     { id: 'logs', label: 'Ops Log', icon: '📜', minRole: 'Staff' },
     { id: 'add_forms', label: 'Admin Console', icon: '🛠️', minRole: 'Admin' },
@@ -39,6 +48,8 @@ const Layout: React.FC<LayoutProps> = ({
   const filteredNavItems = allNavItems.filter(item => 
     user.role === 'Admin' || item.minRole === 'Staff'
   );
+
+  const hasCriticalCompliance = complianceAlerts.some(a => a.severity === 'Critical');
 
   return (
     <div className="flex h-screen bg-white overflow-hidden text-[#434343]">
@@ -84,6 +95,16 @@ const Layout: React.FC<LayoutProps> = ({
                 <span className="text-[8px] font-black uppercase text-amber-700 tracking-widest">Pending Report</span>
              </div>
            )}
+
+           {/* Critical Compliance/Overdue Badge */}
+           {hasCriticalCompliance && (
+             <div className="bg-red-100 border border-red-200 p-2 rounded-xl flex items-center space-x-3">
+                <span className="text-xs">🚨</span>
+                <span className="text-[8px] font-black uppercase text-red-700 tracking-widest">
+                  {tourAlerts > 0 ? 'Missing Arrival Logs' : taskAlerts > 0 ? 'Overdue Maintenance' : 'Compliance Alert'}
+                </span>
+             </div>
+           )}
         </div>
         
         <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
@@ -91,7 +112,7 @@ const Layout: React.FC<LayoutProps> = ({
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center space-x-4 px-6 py-3.5 rounded-2xl transition-all duration-300 font-bold text-sm ${
+              className={`w-full flex items-center space-x-4 px-6 py-3.5 rounded-2xl transition-all duration-300 font-bold text-sm group relative ${
                 activeTab === item.id 
                   ? 'bg-white shadow-lg border border-slate-100' 
                   : 'text-slate-400 hover:text-[#434343]'
@@ -99,7 +120,17 @@ const Layout: React.FC<LayoutProps> = ({
             >
               <span className="text-xl" style={{ color: activeTab === item.id ? PANGEA_YELLOW : 'inherit' }}>{item.icon}</span>
               <span className="flex-1 text-left" style={{ color: activeTab === item.id ? PANGEA_DARK : 'inherit' }}>{item.label}</span>
-              {item.id === 'tours' && pendingReport && <div className="w-2 h-2 bg-amber-500 rounded-full"></div>}
+              
+              {/* Notification Badges */}
+              {(item.badge && item.badge > 0) ? (
+                <div className={`absolute right-4 flex items-center justify-center min-w-[20px] h-5 px-1 ${item.id === 'tours' || item.id === 'maintenance' ? 'bg-red-600' : 'bg-red-500'} rounded-full text-[9px] text-white font-black animate-pulse`}>
+                  {item.badge}
+                </div>
+              ) : (
+                item.id === 'tours' && pendingReport && (
+                  <div className="absolute right-4 w-2 h-2 bg-amber-500 rounded-full"></div>
+                )
+              )}
             </button>
           ))}
         </nav>

@@ -22,6 +22,13 @@ const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ data, onAddTask, onSe
 
   const activePersonnel = data.personnel.filter(p => p.isActive !== false);
 
+  const isTaskOverdue = (dueDateStr: string) => {
+    const due = new Date(dueDateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return due < today;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.boatId || formData.personnelIds.length === 0) return alert("Select boat and personnel.");
@@ -151,41 +158,48 @@ const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ data, onAddTask, onSe
                 <th className="px-4 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
-              {data.tasks.filter(t => t.status !== 'Completed').map(task => (
-                <tr key={task.id} className="hover:bg-slate-50/50 transition-all">
-                  <td className="px-4 py-4">
-                    <span className="font-black text-slate-700">{data.boats.find(b => b.id === task.boatId)?.name}</span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <p className="text-sm font-bold text-slate-800">{task.taskType}</p>
-                    <p className="text-[10px] text-slate-400">Due: {task.dueDate}</p>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${task.priority === Priority.CRITICAL ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                      {task.priority}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center space-x-2">
-                       <button 
-                        onClick={() => onSendReport(task)}
-                        className="flex items-center space-x-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm font-black text-[10px] uppercase"
-                        title="Generate & Email PDF Report"
-                       >
-                         <span>📧 PDF Report</span>
-                       </button>
-                       <button 
-                        onClick={() => onUpdateStatus(task.id, 'Completed')}
-                        className="p-2 bg-green-50 text-green-600 rounded-xl hover:bg-green-600 hover:text-white transition-all shadow-sm"
-                        title="Mark Completed"
-                       >
-                         ✓
-                       </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+            <tbody className="divide-y divide-slate-100">
+              {data.tasks.filter(t => t.status !== 'Completed').map(task => {
+                const overdue = isTaskOverdue(task.dueDate);
+                return (
+                  <tr key={task.id} className={`transition-all ${overdue ? 'bg-red-600 text-white animate-pulse' : 'hover:bg-slate-50/50'}`}>
+                    <td className="px-4 py-4">
+                      <span className={`font-black ${overdue ? 'text-white' : 'text-slate-700'}`}>
+                        {data.boats.find(b => b.id === task.boatId)?.name}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className={`text-sm font-bold ${overdue ? 'text-white' : 'text-slate-800'}`}>{task.taskType}</p>
+                      <p className={`text-[10px] font-black uppercase ${overdue ? 'text-white/80' : 'text-slate-400'}`}>
+                        {overdue ? `OVERDUE: ${task.dueDate}` : `Due: ${task.dueDate}`}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${overdue ? 'bg-white text-red-600' : (task.priority === Priority.CRITICAL ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600')}`}>
+                        {task.priority}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center space-x-2">
+                         <button 
+                          onClick={() => onSendReport(task)}
+                          className={`flex items-center space-x-1 px-3 py-2 rounded-xl transition-all shadow-sm font-black text-[10px] uppercase ${overdue ? 'bg-white/20 text-white hover:bg-white/40' : 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white'}`}
+                          title="Generate & Email PDF Report"
+                         >
+                           <span>📧 PDF Report</span>
+                         </button>
+                         <button 
+                          onClick={() => onUpdateStatus(task.id, 'Completed')}
+                          className={`p-2 rounded-xl transition-all shadow-sm ${overdue ? 'bg-white/20 text-white hover:bg-white/40' : 'bg-green-50 text-green-600 hover:bg-green-600 hover:text-white'}`}
+                          title="Mark Completed"
+                         >
+                           ✓
+                         </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {data.tasks.filter(t => t.status !== 'Completed').length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-4 py-10 text-center text-slate-400 italic font-medium">No active maintenance tasks.</td>

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AppData, Priority } from '../types';
 import { getFleetInsights } from '../services/geminiService';
+import { checkCompliance } from '../services/complianceService';
 
 interface DashboardProps {
   data: AppData;
@@ -40,6 +41,8 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
   const activeTasks = data.tasks.filter(t => t.status !== 'Completed');
   const criticalTasks = activeTasks.filter(t => t.priority === Priority.CRITICAL || t.priority === Priority.HIGH);
   const maintenanceBoats = data.boats.filter(b => b.status === 'In Maintenance' || b.status === 'In Repairs').length;
+
+  const complianceAlerts = useMemo(() => checkCompliance(data), [data]);
 
   // Real-time Fleet Status Helper
   const getBoatDeploymentStatus = (boatId: string) => {
@@ -96,7 +99,9 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 group hover:shadow-xl transition-all">
           <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">⚠️</div>
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Critical Risks</div>
-          <div className="text-4xl font-black text-slate-900 mt-1">{criticalTasks.length}</div>
+          <div className="text-4xl font-black text-slate-900 mt-1">
+            {complianceAlerts.filter(a => a.severity === 'Critical').length}
+          </div>
         </div>
         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 group hover:shadow-xl transition-all">
           <div className="w-12 h-12 bg-amber-50 text-amber-500 rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">⚓</div>
@@ -122,8 +127,12 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {data.boats.map((boat) => {
             const status = getBoatDeploymentStatus(boat.id);
+            const boatCompliance = complianceAlerts.find(a => a.id === boat.id);
             return (
-              <div key={boat.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col items-center text-center space-y-4 hover:shadow-md transition-all group">
+              <div key={boat.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col items-center text-center space-y-4 hover:shadow-md transition-all group relative overflow-hidden">
+                {boatCompliance && (
+                  <div className={`absolute top-0 right-0 left-0 h-1 ${boatCompliance.severity === 'Critical' ? 'bg-red-500' : 'bg-amber-500'} animate-pulse`}></div>
+                )}
                 <div className={`w-16 h-16 ${status.bg} rounded-[1.5rem] flex items-center justify-center text-3xl mb-1 shadow-inner group-hover:scale-105 transition-transform`}>
                   {status.icon}
                 </div>
@@ -202,21 +211,34 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
             <span>Priority Attention</span>
           </h4>
           <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
-            {criticalTasks.slice(0, 5).map(task => (
-              <div key={task.id} className="p-5 bg-red-50/50 rounded-2xl border border-red-100 flex justify-between items-center group hover:bg-red-50 transition-colors">
+            {/* License Compliance, Overdue Tour, & Overdue Maintenance Alerts */}
+            {complianceAlerts.sort((a, b) => (a.severity === 'Critical' ? -1 : 1)).map(alert => (
+              <div key={`compliance-${alert.id}`} className={`p-5 rounded-2xl border flex justify-between items-center group transition-colors ${alert.severity === 'Critical' ? 'bg-red-50/50 border-red-100 hover:bg-red-50' : 'bg-amber-50/50 border-amber-100 hover:bg-amber-50'}`}>
                 <div className="space-y-1">
-                  <span className="font-black text-red-900 text-sm">{data.boats.find(b => b.id === task.boatId)?.name}</span>
-                  <p className="text-red-700 text-xs font-medium">{task.taskType}</p>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[8px] font-black uppercase text-slate-400">
+                      {alert.type === 'Tour' ? 'Arrival Log Missing' : alert.type === 'Task' ? 'Maintenance Service' : 'License Expiry'}
+                    </span>
+                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${alert.severity === 'Critical' ? 'bg-red-600 text-white animate-pulse' : 'bg-amber-500 text-white'}`}>
+                      {alert.type === 'Tour' ? 'STALE TRIP' : alert.type === 'Task' ? 'MAINTENANCE OVERDUE' : alert.severity}
+                    </span>
+                  </div>
+                  <span className={`font-black text-sm ${alert.severity === 'Critical' ? 'text-red-900' : 'text-amber-900'}`}>{alert.name}</span>
+                  <p className={`text-xs font-medium ${alert.severity === 'Critical' ? 'text-red-700' : 'text-amber-700'}`}>
+                    {alert.type === 'Tour' 
+                      ? `Vessel at sea for ${alert.daysLeft} hours` 
+                      : alert.type === 'Task'
+                      ? (alert.daysLeft < 0 ? `Overdue by ${Math.abs(alert.daysLeft)} days` : `Due in ${alert.daysLeft} days`)
+                      : (alert.daysLeft <= 0 ? `Expired on ${alert.date}` : `Expiring in ${alert.daysLeft} days`)}
+                  </p>
                 </div>
-                <div className="flex flex-col items-end">
-                   <span className="text-[9px] font-black bg-red-200 text-red-800 px-2 py-1 rounded-lg uppercase">
-                    {task.priority}
-                  </span>
-                  <span className="text-[8px] font-bold text-red-400 mt-1 uppercase">Overdue</span>
+                <div className="text-2xl">
+                  {alert.type === 'Boat' ? '🛥️' : alert.type === 'Staff' ? '👤' : alert.type === 'Task' ? '🔧' : '⌛'}
                 </div>
               </div>
             ))}
-            {criticalTasks.length === 0 && (
+            
+            {complianceAlerts.length === 0 && (
               <div className="py-20 text-center space-y-2">
                 <p className="text-4xl">🏝️</p>
                 <p className="text-sm font-bold text-slate-300 uppercase tracking-widest">No Critical Alerts</p>

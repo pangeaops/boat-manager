@@ -14,6 +14,24 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
   const [viewingProfileId, setViewingProfileId] = useState<string | null>(null);
   const [showPastEmployees, setShowPastEmployees] = useState(false);
 
+  const isExpired = (dateStr?: string) => {
+    if (!dateStr) return false;
+    const exp = new Date(dateStr);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return exp.getTime() < today.getTime();
+  };
+
+  const isExpiringSoon = (dateStr?: string) => {
+    if (!dateStr) return false;
+    const exp = new Date(dateStr);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diff = exp.getTime() - today.getTime();
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    return days > 0 && days <= 30;
+  };
+
   // Derived states to ensure we always have the freshest data from 'data.personnel'
   const activeStaff = data.personnel.filter(p => p.isActive !== false);
   const inactiveStaff = data.personnel.filter(p => p.isActive === false);
@@ -32,100 +50,111 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
 
   const activeGrouped = getGroupedPersonnel(activeStaff);
 
-  const ProfileDetailRow = ({ label, value }: { label: string, value?: string | number }) => (
-    <div className="flex justify-between items-center py-3 border-b border-slate-50 last:border-0">
+  const ProfileDetailRow = ({ label, value, highlight }: { label: string, value?: string | number, highlight?: 'Critical' | 'Warning' }) => (
+    <div className={`flex justify-between items-center py-3 border-b border-slate-50 last:border-0 px-2 rounded-lg ${highlight === 'Critical' ? 'bg-red-50' : highlight === 'Warning' ? 'bg-amber-50' : ''}`}>
       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">{label}</span>
-      <span className="text-sm font-bold text-slate-800">{value || '—'}</span>
+      <span className={`text-sm font-bold ${highlight === 'Critical' ? 'text-red-600' : highlight === 'Warning' ? 'text-amber-600' : 'text-slate-800'}`}>{value || '—'}</span>
     </div>
   );
 
-  const StaffCard: React.FC<{ person: Personnel }> = ({ person }) => (
-    <div 
-      className="bg-white rounded-[3rem] p-8 border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-2xl transition-all duration-500 cursor-pointer"
-      onClick={() => userRole === 'Admin' && setViewingProfileId(person.id)}
-    >
-      <div className="absolute top-6 right-6 flex space-x-2 z-20">
-        {userRole === 'Admin' && (
-          <button 
-            onClick={(e) => { e.stopPropagation(); setEditingPersonId(person.id); }}
-            className="w-12 h-12 bg-white/80 backdrop-blur shadow-sm rounded-xl flex items-center justify-center text-[8px] font-black hover:bg-[#ffb519] hover:text-white transition-all border border-slate-100"
-          >
-            EDIT
-          </button>
+  const StaffCard: React.FC<{ person: Personnel }> = ({ person }) => {
+    const expired = isExpired(person.licenseExpDate);
+    const expiringSoon = isExpiringSoon(person.licenseExpDate);
+
+    return (
+      <div 
+        className={`bg-white rounded-[3rem] p-8 border-2 shadow-sm relative overflow-hidden group hover:shadow-2xl transition-all duration-500 cursor-pointer ${expired ? 'border-red-400' : expiringSoon ? 'border-amber-400' : 'border-slate-100'}`}
+        onClick={() => userRole === 'Admin' && setViewingProfileId(person.id)}
+      >
+        {expired && (
+          <div className="absolute top-4 left-0 right-0 text-center bg-red-500 text-white text-[8px] font-black uppercase py-1 z-20 shadow-md">
+            Credentials Expired
+          </div>
         )}
-      </div>
-      
-      <div className="relative z-10 space-y-6">
-        <div className="flex items-center space-x-4">
-          <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center text-2xl shadow-inner text-white overflow-hidden border-2 border-slate-100">
-            {person.profilePhoto ? (
-              <img src={person.profilePhoto} className="w-full h-full object-cover" alt={person.name} />
-            ) : (
-              <span className="text-3xl grayscale opacity-30">
-                {person.role.includes('Capitán') ? '⚓' : person.role === PersonnelRole.CEO ? '🏢' : '👤'}
-              </span>
-            )}
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <h4 className="text-lg font-black text-slate-900 leading-tight truncate">{person.name}</h4>
-            <p className="text-[10px] font-bold text-[#ffb519] uppercase tracking-widest truncate">{person.role}</p>
-          </div>
+
+        <div className="absolute top-6 right-6 flex space-x-2 z-20">
+          {userRole === 'Admin' && (
+            <button 
+              onClick={(e) => { e.stopPropagation(); setEditingPersonId(person.id); }}
+              className="w-12 h-12 bg-white/80 backdrop-blur shadow-sm rounded-xl flex items-center justify-center text-[8px] font-black hover:bg-[#ffb519] hover:text-white transition-all border border-slate-100"
+            >
+              EDIT
+            </button>
+          )}
         </div>
         
-        <div className="space-y-4 border-y border-slate-50 py-6">
-          <div className="grid grid-cols-2 gap-4">
-             <div className="space-y-1">
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">National ID</p>
-               <p className="text-xs font-black text-slate-800">{person.idNumber || '—'}</p>
-             </div>
-             <div className="text-right space-y-1">
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Phone Number</p>
-               <p className="text-xs font-black text-slate-800">{person.phone}</p>
-             </div>
+        <div className="relative z-10 space-y-6 pt-2">
+          <div className="flex items-center space-x-4">
+            <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center text-2xl shadow-inner text-white overflow-hidden border-2 border-slate-100">
+              {person.profilePhoto ? (
+                <img src={person.profilePhoto} className="w-full h-full object-cover" alt={person.name} />
+              ) : (
+                <span className="text-3xl grayscale opacity-30">
+                  {person.role.includes('Capitán') ? '⚓' : person.role === PersonnelRole.CEO ? '🏢' : '👤'}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <h4 className="text-lg font-black text-slate-900 leading-tight truncate">{person.name}</h4>
+              <p className="text-[10px] font-bold text-[#ffb519] uppercase tracking-widest truncate">{person.role}</p>
+            </div>
+          </div>
+          
+          <div className="space-y-4 border-y border-slate-50 py-6">
+            <div className="grid grid-cols-2 gap-4">
+               <div className="space-y-1">
+                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">National ID</p>
+                 <p className="text-xs font-black text-slate-800">{person.idNumber || '—'}</p>
+               </div>
+               <div className="text-right space-y-1">
+                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Phone Number</p>
+                 <p className="text-xs font-black text-slate-800">{person.phone}</p>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+               <div className="space-y-1">
+                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">License #</p>
+                 <p className="text-xs font-black text-slate-800">{person.licenseNumber || '—'}</p>
+               </div>
+               <div className={`text-right space-y-1 p-1 rounded-lg ${expired ? 'bg-red-500 text-white' : expiringSoon ? 'bg-amber-100' : ''}`}>
+                 <p className={`text-[9px] font-black uppercase tracking-tighter ${expired ? 'text-white' : 'text-slate-400'}`}>License Exp</p>
+                 <p className={`text-xs font-black ${expired ? 'text-white' : expiringSoon ? 'text-amber-700' : 'text-slate-800'}`}>{person.licenseExpDate || '—'}</p>
+               </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+               <p className="text-[9px] font-black text-[#ffb519] uppercase tracking-widest">SOS / Emergency Contact</p>
+               <div className="flex justify-between items-center">
+                  <span className="text-[11px] font-black text-slate-700">{person.emergencyContactName || 'Base Hub'}</span>
+                  <span className="text-[11px] font-black text-slate-900">{person.emergencyContactPhone || '+507 760 8024'}</span>
+               </div>
+            </div>
+
+            {!person.isActive && (
+               <div className="p-4 bg-red-100/50 rounded-2xl border border-red-200">
+                  <p className="text-[9px] font-black text-red-600 uppercase tracking-widest">Past Employee</p>
+                  <p className="text-xs font-black text-red-800">Reason: {person.inactiveReason || 'Not Specified'}</p>
+               </div>
+            )}
+
+            <div className="p-4 bg-red-50/50 rounded-2xl border border-red-100">
+               <p className="text-[9px] font-black text-red-600 uppercase tracking-tighter">Medical Alerts / Allergies</p>
+               <p className="text-xs font-bold text-red-800 truncate">{person.allergies || 'NONE DECLARED'}</p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-             <div className="space-y-1">
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">License #</p>
-               <p className="text-xs font-black text-slate-800">{person.licenseNumber || '—'}</p>
-             </div>
-             <div className="text-right space-y-1">
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">License Exp</p>
-               <p className="text-xs font-black text-slate-800">{person.licenseExpDate || '—'}</p>
-             </div>
-          </div>
-
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
-             <p className="text-[9px] font-black text-[#ffb519] uppercase tracking-widest">SOS / Emergency Contact</p>
-             <div className="flex justify-between items-center">
-                <span className="text-[11px] font-black text-slate-700">{person.emergencyContactName || 'Base Hub'}</span>
-                <span className="text-[11px] font-black text-slate-900">{person.emergencyContactPhone || '+507 760 8024'}</span>
-             </div>
-          </div>
-
-          {!person.isActive && (
-             <div className="p-4 bg-red-100/50 rounded-2xl border border-red-200">
-                <p className="text-[9px] font-black text-red-600 uppercase tracking-widest">Past Employee</p>
-                <p className="text-xs font-black text-red-800">Reason: {person.inactiveReason || 'Not Specified'}</p>
-             </div>
+          {userRole === 'Admin' && (
+            <div className="text-center pt-2">
+              <span className="text-[10px] font-black uppercase text-[#ffb519] tracking-[0.2em] animate-pulse">
+                View Admin Dossier →
+              </span>
+            </div>
           )}
-
-          <div className="p-4 bg-red-50/50 rounded-2xl border border-red-100">
-             <p className="text-[9px] font-black text-red-600 uppercase tracking-tighter">Medical Alerts / Allergies</p>
-             <p className="text-xs font-bold text-red-800 truncate">{person.allergies || 'NONE DECLARED'}</p>
-          </div>
         </div>
-
-        {userRole === 'Admin' && (
-          <div className="text-center pt-2">
-            <span className="text-[10px] font-black uppercase text-[#ffb519] tracking-[0.2em] animate-pulse">
-              View Admin Dossier →
-            </span>
-          </div>
-        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   if (editingPerson) {
     return (
@@ -259,7 +288,11 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
                     <section>
                       <h4 className="text-xs font-black uppercase text-[#ffb519] mb-4 border-b border-slate-100 pb-2">License & Credentials</h4>
                       <ProfileDetailRow label="License #" value={viewingProfile.licenseNumber} />
-                      <ProfileDetailRow label="Exp Date" value={viewingProfile.licenseExpDate} />
+                      <ProfileDetailRow 
+                        label="Exp Date" 
+                        value={viewingProfile.licenseExpDate} 
+                        highlight={isExpired(viewingProfile.licenseExpDate) ? 'Critical' : isExpiringSoon(viewingProfile.licenseExpDate) ? 'Warning' : undefined}
+                      />
                       {viewingProfile.licensePhoto && (
                         <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                           <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Attached Asset</p>

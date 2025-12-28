@@ -233,6 +233,7 @@ const App: React.FC = () => {
       isSyncing={isSyncing}
       lastSync={lastSync}
       pendingReport={pendingReport}
+      data={data}
     >
       {isGeneratingReport && (
         <div className="fixed inset-0 bg-white/70 backdrop-blur-xl z-[100] flex items-center justify-center">

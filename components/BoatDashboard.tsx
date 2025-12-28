@@ -11,10 +11,22 @@ interface BoatDashboardProps {
 }
 
 const BoatDashboard: React.FC<BoatDashboardProps> = ({ data, userRole, onUpdateTaskStatus, onEditBoat, onUpdateBoatStatus }) => {
-  const isExpiringSoon = (dateStr: string) => {
+  const isExpired = (dateStr: string) => {
+    if (!dateStr) return false;
     const exp = new Date(dateStr);
-    const diff = exp.getTime() - new Date().getTime();
-    return diff < 1000 * 60 * 60 * 24 * 30; // 30 days
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return exp.getTime() < today.getTime();
+  };
+
+  const isExpiringSoon = (dateStr: string) => {
+    if (!dateStr) return false;
+    const exp = new Date(dateStr);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diff = exp.getTime() - today.getTime();
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    return days > 0 && days <= 30;
   };
 
   const getPendingTasks = (boatId: string) => {
@@ -45,8 +57,17 @@ const BoatDashboard: React.FC<BoatDashboardProps> = ({ data, userRole, onUpdateT
       <div className="grid grid-cols-1 gap-12">
         {data.boats.map((boat) => {
           const tasks = getPendingTasks(boat.id);
+          const expired = isExpired(boat.licenseExpDate);
+          const expiringSoon = isExpiringSoon(boat.licenseExpDate);
+
           return (
-            <div key={boat.id} className="bg-white rounded-[3rem] p-10 shadow-2xl border border-slate-50 flex flex-col gap-10">
+            <div key={boat.id} className={`bg-white rounded-[3rem] p-10 shadow-2xl border-2 transition-all ${expired ? 'border-red-400' : expiringSoon ? 'border-amber-400' : 'border-slate-50'} flex flex-col gap-10 relative overflow-hidden`}>
+              {expired && (
+                <div className="absolute top-0 right-0 bg-red-500 text-white px-8 py-2 font-black text-[10px] uppercase tracking-widest transform translate-x-12 translate-y-4 rotate-45 shadow-lg">
+                  EXPIRED
+                </div>
+              )}
+              
               <div className="flex flex-col lg:flex-row gap-10">
                 <div className="w-full lg:w-1/3 space-y-8">
                    <div className="flex justify-between items-start">
@@ -78,7 +99,10 @@ const BoatDashboard: React.FC<BoatDashboardProps> = ({ data, userRole, onUpdateT
                    <div className="bg-slate-50 p-6 rounded-3xl space-y-4">
                       <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Hull HIN</span><span className="text-sm font-black text-slate-700">{boat.serialNumber}</span></div>
                       <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">License No.</span><span className="text-sm font-black text-slate-700">{boat.licenseNumber}</span></div>
-                      <div className={`flex justify-between border-b border-slate-200 pb-2 ${isExpiringSoon(boat.licenseExpDate) ? 'text-red-600' : ''}`}><span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">License Exp.</span><span className="text-sm font-black">{boat.licenseExpDate}</span></div>
+                      <div className={`flex justify-between border-b border-slate-200 pb-2 p-2 rounded-xl transition-all ${expired ? 'bg-red-500 text-white animate-pulse' : expiringSoon ? 'bg-amber-100 text-amber-700 font-black' : ''}`}>
+                        <span className={`text-[10px] font-black uppercase tracking-tighter ${expired ? 'text-white' : 'text-slate-400'}`}>License Exp.</span>
+                        <span className="text-sm font-black">{boat.licenseExpDate || 'NOT SET'}</span>
+                      </div>
                       <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Capacity</span><span className="text-sm font-black text-slate-700">{boat.capacity} PAX</span></div>
                    </div>
                 </div>
