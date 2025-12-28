@@ -2,22 +2,34 @@ import { AppData } from "../types";
 
 /**
  * Pangea Ops - Automated Reporting Engine
+ * 
+ * Handles scheduling logic for daily and weekly operational reports.
  */
+
+const SNOOZE_DURATION_MS = 3600000; // 1 Hour
 
 export const checkReportStatus = (data: AppData) => {
   const today = new Date().toISOString().split('T')[0];
   const lastDaily = localStorage.getItem('last_daily_report_sent');
   const lastWeekly = localStorage.getItem('last_weekly_report_sent');
+  
+  const dailySnoozeAt = localStorage.getItem('daily_report_snooze');
+  const weeklySnoozeAt = localStorage.getItem('weekly_report_snooze');
+  
+  const now = Date.now();
 
-  const needsDaily = lastDaily !== today;
+  const isDailySnoozed = dailySnoozeAt && (now - parseInt(dailySnoozeAt) < SNOOZE_DURATION_MS);
+  const isWeeklySnoozed = weeklySnoozeAt && (now - parseInt(weeklySnoozeAt) < SNOOZE_DURATION_MS);
+
+  const needsDaily = (lastDaily !== today) && !isDailySnoozed;
   
   let needsWeekly = false;
   if (!lastWeekly) {
-    needsWeekly = true;
+    needsWeekly = !isWeeklySnoozed;
   } else {
     const lastDate = new Date(lastWeekly);
-    const diffDays = (new Date().getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays >= 7) needsWeekly = true;
+    const diffDays = (now - lastDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDays >= 7 && !isWeeklySnoozed) needsWeekly = true;
   }
 
   return { needsDaily, needsWeekly };
@@ -26,15 +38,19 @@ export const checkReportStatus = (data: AppData) => {
 export const markReportSent = (type: 'daily' | 'weekly') => {
   const today = new Date().toISOString().split('T')[0];
   localStorage.setItem(`last_${type}_report_sent`, today);
+  // Clear snooze once sent
+  localStorage.removeItem(`${type}_report_snooze`);
+};
+
+export const snoozeReport = (type: 'daily' | 'weekly') => {
+  localStorage.setItem(`${type}_report_snooze`, Date.now().toString());
 };
 
 export const getReportRecipients = () => {
-  // Support for multiple recipients simultaneously
   return ['ops@pangeabocas.com', 'hello@pangeabocas.com'];
 };
 
 export const generateWeeklySummaryData = (data: AppData) => {
-  // Logic to aggregate the last 7 days of tours and maintenance
   const oneWeekAgo = new Date();
   oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
   

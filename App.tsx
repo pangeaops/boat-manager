@@ -16,7 +16,7 @@ import InventoryDashboard from './components/InventoryDashboard.tsx';
 import { INITIAL_DATA_KEY, FULL_FLEET, INITIAL_PERSONNEL } from './constants.ts';
 import { generateDailyOperationalSummary } from './services/geminiService.ts';
 import { syncToSheet, fetchAppData } from './services/sheetService.ts';
-import { checkReportStatus, markReportSent } from './services/reportService.ts';
+import { checkReportStatus, markReportSent, snoozeReport } from './services/reportService.ts';
 import { jsPDF } from 'jspdf';
 
 const App: React.FC = () => {
@@ -28,6 +28,9 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingReport, setPendingReport] = useState<'daily' | 'weekly' | null>(null);
   
+  // Ref to track last manual interaction time
+  const lastManualUpdateRef = useRef<number>(0);
+
   const [data, setData] = useState<AppData>(() => {
     const saved = localStorage.getItem(INITIAL_DATA_KEY);
     return saved ? JSON.parse(saved) : { 
@@ -40,46 +43,46 @@ const App: React.FC = () => {
     };
   });
 
-  // Reference to prevent "State Stuttering" during refreshes
-  const lastUpdateRef = useRef<number>(Date.now());
-
   const refreshData = useCallback(async (showIndicator = false) => {
     if (!currentUser) return;
+    
+    // SYNC PROTECTION: Avoid clobbering local state if user just made changes (15s window)
+    const now = Date.now();
+    if (now - lastManualUpdateRef.current < 15000) {
+      console.log("[PangeaOps] Skipping cloud refresh: Waiting for Sheet to process recent local changes...");
+      return;
+    }
+
     if (showIndicator) setIsSyncing(true);
     
     try {
       const remoteData = await fetchAppData();
       if (remoteData) {
-        // Only update if remote data is actually present
-        setData(prev => {
-          // Merge strategy: Cloud data is source of truth, but we keep local logs
-          // unless the cloud has more recent ones.
-          const newState = {
-            ...prev,
-            boats: remoteData.boats || prev.boats,
-            tasks: remoteData.tasks || prev.tasks,
-            personnel: remoteData.personnel || prev.personnel,
-            tours: remoteData.tours || prev.tours,
-            inventory: remoteData.inventory || prev.inventory,
-            logs: remoteData.logs && remoteData.logs.length >= prev.logs.length ? remoteData.logs : prev.logs
-          };
-          return newState;
-        });
+        setData(prev => ({
+          ...prev,
+          boats: remoteData.boats || prev.boats,
+          tasks: remoteData.tasks || prev.tasks,
+          personnel: remoteData.personnel || prev.personnel,
+          tours: remoteData.tours || prev.tours,
+          inventory: remoteData.inventory || prev.inventory,
+          logs: remoteData.logs && remoteData.logs.length >= prev.logs.length ? remoteData.logs : prev.logs
+        }));
         setLastSync(new Date());
-        lastUpdateRef.current = Date.now();
 
+        // Check for reports while syncing, respecting snooze logic in service
         const { needsDaily, needsWeekly } = checkReportStatus(remoteData);
         if (needsWeekly) setPendingReport('weekly');
         else if (needsDaily) setPendingReport('daily');
+        else setPendingReport(null);
       }
     } catch (err) {
-      console.error("[Sync] Background refresh failed:", err);
+      console.error("[PangeaOps] Cloud sync failed", err);
     } finally {
       setIsSyncing(false);
     }
   }, [currentUser]);
 
-  // High-Frequency Polling (10s)
+  // High-frequency polling for multi-device sync (10s)
   useEffect(() => {
     if (currentUser) {
       refreshData(true);
@@ -94,6 +97,10 @@ const App: React.FC = () => {
     localStorage.setItem(INITIAL_DATA_KEY, JSON.stringify(data));
   }, [data]);
 
+  const recordManualAction = () => {
+    lastManualUpdateRef.current = Date.now();
+  };
+
   const createLog = (action: string, details: string, category: AuditLog['category']) => {
     const newLog: AuditLog = {
       id: Math.random().toString(36).substr(2, 9),
@@ -104,6 +111,7 @@ const App: React.FC = () => {
     };
     setData(prev => ({ ...prev, logs: [...prev.logs, newLog] }));
     syncToSheet('AuditLogs', { ...newLog, user: currentUser?.name || 'System' });
+    recordManualAction();
   };
 
   const handleUpdateBoatStatus = (boatId: string, status: BoatStatus) => {
@@ -112,20 +120,22 @@ const App: React.FC = () => {
       if (!boat) return prev;
       const updatedBoat = { ...boat, status };
       syncToSheet('Boats', updatedBoat);
-      createLog('Boat Status Changed', `${boat.name} set to ${status}.`, 'Fleet');
+      createLog('Boat Status Change', `${boat.name} -> ${status}`, 'Fleet');
+      recordManualAction();
       return { ...prev, boats: prev.boats.map(b => b.id === boatId ? updatedBoat : b) };
     });
   };
 
   const addBoat = (boat: Boat) => {
+    recordManualAction();
     setData(prev => {
       const exists = prev.boats.find(b => b.id === boat.id);
       syncToSheet('Boats', boat);
       if (exists) {
-        createLog('Vessel Updated', `${boat.name} modified.`, 'Fleet');
+        createLog('Boat Specs Updated', boat.name, 'Fleet');
         return { ...prev, boats: prev.boats.map(b => b.id === boat.id ? boat : b) };
       }
-      createLog('New Boat Added', `${boat.name} registered.`, 'Fleet');
+      createLog('New Boat Registered', boat.name, 'Fleet');
       return { ...prev, boats: [...prev.boats, boat] };
     });
     setEditingBoat(null);
@@ -133,36 +143,32 @@ const App: React.FC = () => {
   };
 
   const addPersonnel = async (person: Personnel) => {
-    // 1. Update local state immediately
+    recordManualAction();
     setData(prev => ({ ...prev, personnel: [...prev.personnel, person] }));
-    createLog('Personnel Added', `${person.name} onboarded.`, 'Personnel');
-    
-    // 2. Sync to cloud using the specific mapped tab name
-    const success = await syncToSheet('Personnel Info', person);
-    if (success) {
-      setActiveTab('personnel_hub');
-    }
+    createLog('Staff Onboarded', person.name, 'Personnel');
+    await syncToSheet('Personnel Info', person);
+    setActiveTab('personnel_hub');
   };
 
   const updatePersonnel = async (person: Personnel) => {
-    // 1. Update local state immediately
+    recordManualAction();
     setData(prev => ({ 
       ...prev, 
       personnel: prev.personnel.map(p => p.id === person.id ? person : p) 
     }));
-    createLog('Personnel Updated', `${person.name} profile modified.`, 'Personnel');
-    
-    // 2. Sync to cloud
+    createLog('Staff Profile Updated', person.name, 'Personnel');
     await syncToSheet('Personnel Info', person);
   };
 
   const addTour = (tour: Tour) => {
+    recordManualAction();
     setData(prev => ({ ...prev, tours: [...prev.tours, tour] }));
-    createLog('Tour Dispatched', `${tour.route} started.`, 'Tour');
+    createLog('Trip Dispatched', tour.route, 'Tour');
     syncToSheet('Tours', tour);
   };
 
   const updateTour = (tourId: string, updates: Partial<Tour>) => {
+    recordManualAction();
     setData(prev => {
       const tour = prev.tours.find(t => t.id === tourId);
       if (!tour) return prev;
@@ -173,6 +179,7 @@ const App: React.FC = () => {
   };
 
   const updateInventory = (item: InventoryItem) => {
+    recordManualAction();
     setData(prev => {
       const exists = prev.inventory.find(i => i.id === item.id);
       syncToSheet('Inventory', item);
@@ -185,66 +192,37 @@ const App: React.FC = () => {
     setIsGeneratingReport(true);
     try {
       const summary = await generateDailyOperationalSummary(data);
-      if (!summary) throw new Error("The AI service returned no data.");
+      if (!summary || summary.includes("API_KEY_MISSING")) throw new Error("Cloud Intelligence Unavailable");
       
-      if (summary.includes("API_KEY_MISSING") || summary.includes("QUOTA_EXCEEDED") || summary.includes("API_ERROR")) {
-        alert(summary);
-        return;
-      }
-
       const doc = new jsPDF();
       const splitText = doc.splitTextToSize(summary, 170);
       let y = 30;
-      
       doc.setFontSize(16);
-      doc.text(`Pangea Bocas ${type === 'weekly' ? 'Weekly' : 'Daily'} Operational Report`, 20, 20);
+      doc.text(`Pangea Bocas ${type} Operational Review`, 20, 20);
       doc.setFontSize(10);
-      
       splitText.forEach((line: string) => {
-        if (y > 280) {
-          doc.addPage();
-          y = 20;
-        }
+        if (y > 280) { doc.addPage(); y = 20; }
         doc.text(line, 20, y);
         y += 7;
       });
-
-      doc.save(`Pangea_Ops_${type}_${new Date().toISOString().split('T')[0]}.pdf`);
-      createLog(`${type === 'weekly' ? 'Weekly' : 'Full'} Report Exported`, 'Operational PDF generated.', 'Tour');
-      
+      doc.save(`Pangea_Report_${new Date().toISOString().split('T')[0]}.pdf`);
       markReportSent(type);
       setPendingReport(null);
     } catch (err: any) { 
-      console.error("Report Generation Error:", err);
-      alert(`Failed to generate report: ${err.message || "Unknown error"}`); 
+      alert(`Report Error: ${err.message}`); 
     } finally { 
       setIsGeneratingReport(false); 
     }
   };
 
-  if (!currentUser) return <Login onLogin={(user) => setCurrentUser(user)} />;
-
-  const renderContent = () => {
-    if (editingBoat) return <AddBoatForm initialData={editingBoat} onAddBoat={addBoat} onCancel={() => setEditingBoat(null)} />;
-    switch (activeTab) {
-      case 'dashboard': return <Dashboard data={data} onSendFullDailyReport={() => handleSendFullDailyReport('daily')} isSyncing={isSyncing} />;
-      case 'fleet': return <BoatDashboard data={data} userRole={currentUser.role} onUpdateTaskStatus={() => {}} onEditBoat={setEditingBoat} onUpdateBoatStatus={handleUpdateBoatStatus} />;
-      case 'tours': return <TourLogForm data={data} onAddTour={addTour} onUpdateTour={updateTour} />;
-      case 'inventory': return <InventoryDashboard data={data} onUpdateInventory={updateInventory} />;
-      case 'personnel_hub': return <PersonnelDashboard data={data} userRole={currentUser.role} onUpdatePersonnel={updatePersonnel} />;
-      case 'maintenance': return <MaintenanceForm data={data} onAddTask={() => {}} onSendReport={() => {}} onUpdateStatus={() => {}} />;
-      case 'protocols': return <Protocols />;
-      case 'admin_dashboard': return <AdminDashboard data={data} />;
-      case 'logs': return <LogSection logs={data.logs} />;
-      case 'add_forms': return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-          {currentUser.role === 'Admin' ? <AddBoatForm onAddBoat={addBoat} /> : <div>Admin access required.</div>}
-          {currentUser.role === 'Admin' ? <AddPersonnelForm onAddPersonnel={addPersonnel} /> : <div>Admin access required.</div>}
-        </div>
-      );
-      default: return <Dashboard data={data} onSendFullDailyReport={() => handleSendFullDailyReport('daily')} isSyncing={isSyncing} />;
+  const handleSnoozeReport = () => {
+    if (pendingReport) {
+      snoozeReport(pendingReport);
+      setPendingReport(null);
     }
   };
+
+  if (!currentUser) return <Login onLogin={(user) => setCurrentUser(user)} />;
 
   return (
     <Layout 
@@ -257,18 +235,17 @@ const App: React.FC = () => {
       pendingReport={pendingReport}
     >
       {isGeneratingReport && (
-        <div className="fixed inset-0 bg-white/60 backdrop-blur-md z-50 flex items-center justify-center">
-          <div className="bg-white p-12 rounded-[3rem] shadow-2xl border border-slate-100 text-center space-y-4">
-            <div className="w-12 h-12 border-4 border-[#ffb519] border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="font-black">Compiling Pangea Fleet Data...</p>
-            <p className="text-xs text-slate-400">Consulting Gemini Intelligence</p>
+        <div className="fixed inset-0 bg-white/70 backdrop-blur-xl z-[100] flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 border-4 border-[#ffb519] border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="font-black text-xl uppercase tracking-tighter">Compiling Cloud Intelligence...</p>
           </div>
         </div>
       )}
 
       {pendingReport && (
         <div className="fixed bottom-10 right-10 z-[60] animate-in slide-in-from-right-10 duration-500">
-           <div className="bg-[#434343] text-white p-8 rounded-[2rem] shadow-2xl border border-white/10 space-y-4 max-w-sm">
+           <div className="bg-[#434343] text-white p-8 rounded-[2.5rem] shadow-2xl border border-white/10 space-y-4 max-w-sm">
               <div className="flex items-center space-x-3">
                  <span className="text-2xl">📅</span>
                  <h4 className="font-black uppercase tracking-widest text-sm">Pending {pendingReport} Report</h4>
@@ -276,13 +253,34 @@ const App: React.FC = () => {
               <p className="text-xs text-slate-400 leading-relaxed font-medium">The system has detected a scheduled report is due. Would you like to compile and dispatch it now to the operations team?</p>
               <div className="flex space-x-3">
                  <button onClick={() => handleSendFullDailyReport(pendingReport)} className="flex-1 bg-[#ffb519] text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-transform">Dispatch Now</button>
-                 <button onClick={() => setPendingReport(null)} className="px-4 py-3 bg-white/10 text-slate-400 rounded-xl font-black text-[10px] uppercase">Later</button>
+                 <button onClick={handleSnoozeReport} className="px-6 py-3 bg-white/10 text-slate-400 rounded-xl font-black text-[10px] uppercase hover:bg-white/20 transition-colors">Later</button>
               </div>
            </div>
         </div>
       )}
 
-      {renderContent()}
+      {activeTab === 'dashboard' && <Dashboard data={data} onSendFullDailyReport={() => handleSendFullDailyReport('daily')} isSyncing={isSyncing} />}
+      {activeTab === 'fleet' && <BoatDashboard data={data} userRole={currentUser.role} onUpdateTaskStatus={() => {}} onEditBoat={setEditingBoat} onUpdateBoatStatus={handleUpdateBoatStatus} />}
+      {activeTab === 'tours' && <TourLogForm data={data} onAddTour={addTour} onUpdateTour={updateTour} />}
+      {activeTab === 'inventory' && <InventoryDashboard data={data} onUpdateInventory={updateInventory} />}
+      {activeTab === 'personnel_hub' && <PersonnelDashboard data={data} userRole={currentUser.role} onUpdatePersonnel={updatePersonnel} />}
+      {activeTab === 'maintenance' && <MaintenanceForm data={data} onAddTask={() => {}} onSendReport={() => {}} onUpdateStatus={() => {}} />}
+      {activeTab === 'protocols' && <Protocols />}
+      {activeTab === 'admin_dashboard' && <AdminDashboard data={data} />}
+      {activeTab === 'logs' && <LogSection logs={data.logs} />}
+      {activeTab === 'add_forms' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+          {currentUser.role === 'Admin' ? <AddBoatForm onAddBoat={addBoat} /> : <div>Admin access required.</div>}
+          {currentUser.role === 'Admin' ? <AddPersonnelForm onAddPersonnel={addPersonnel} /> : <div>Admin access required.</div>}
+        </div>
+      )}
+      {editingBoat && (
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <AddBoatForm initialData={editingBoat} onAddBoat={addBoat} onCancel={() => setEditingBoat(null)} />
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };
