@@ -10,7 +10,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyK2c-jGvMxuoimp5nj
 // Mapping dictionary to translate Sheet Tab Names to Application State Keys
 export const SHEET_MAP: Record<string, string> = {
   "Boats": "boats",
-  "Personnel Info": "personnel",
+  "Personnel": "personnel", // Updated to match actual Sheet tab name
   "Tours": "tours",
   "Inventory": "inventory",
   "AuditLogs": "logs",

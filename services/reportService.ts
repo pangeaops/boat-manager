@@ -6,7 +6,7 @@ import { AppData } from "../types";
  * Handles scheduling logic for daily and weekly operational reports.
  */
 
-const SNOOZE_DURATION_MS = 3600000; // 1 Hour
+const SNOOZE_DURATION_MS = 3600000; // 1 Hour exactly
 
 export const checkReportStatus = (data: AppData) => {
   const today = new Date().toISOString().split('T')[0];
@@ -21,15 +21,21 @@ export const checkReportStatus = (data: AppData) => {
   const isDailySnoozed = dailySnoozeAt && (now - parseInt(dailySnoozeAt) < SNOOZE_DURATION_MS);
   const isWeeklySnoozed = weeklySnoozeAt && (now - parseInt(weeklySnoozeAt) < SNOOZE_DURATION_MS);
 
+  // Daily report logic
   const needsDaily = (lastDaily !== today) && !isDailySnoozed;
   
+  // Weekly report logic
   let needsWeekly = false;
-  if (!lastWeekly) {
-    needsWeekly = !isWeeklySnoozed;
-  } else {
-    const lastDate = new Date(lastWeekly);
-    const diffDays = (now - lastDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays >= 7 && !isWeeklySnoozed) needsWeekly = true;
+  if (!isWeeklySnoozed) {
+    if (!lastWeekly) {
+      // If never sent, we consider it pending if there's enough data (e.g., at least one tour)
+      needsWeekly = data.tours.length > 0;
+    } else {
+      const lastDate = new Date(lastWeekly);
+      const diffTime = now - lastDate.getTime();
+      const diffDays = diffTime / (1000 * 60 * 60 * 24);
+      if (diffDays >= 7) needsWeekly = true;
+    }
   }
 
   return { needsDaily, needsWeekly };

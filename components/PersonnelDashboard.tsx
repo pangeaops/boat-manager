@@ -7,9 +7,10 @@ interface PersonnelDashboardProps {
   data: AppData;
   userRole: UserRole;
   onUpdatePersonnel: (person: Personnel) => void;
+  onSyncAll?: () => void;
 }
 
-const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole, onUpdatePersonnel }) => {
+const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole, onUpdatePersonnel, onSyncAll }) => {
   const [editingPersonId, setEditingPersonId] = useState<string | null>(null);
   const [viewingProfileId, setViewingProfileId] = useState<string | null>(null);
   const [showPastEmployees, setShowPastEmployees] = useState(false);
@@ -178,12 +179,23 @@ const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole,
           <h2 className="text-4xl font-black tracking-tight" style={{ color: PANGEA_DARK }}>Staff Hub</h2>
           <p className="text-slate-400 font-medium">Official credential and emergency database.</p>
         </div>
-        <div className="bg-white px-8 py-4 rounded-[2rem] shadow-sm border border-slate-100 flex items-center space-x-4">
-          <div className="text-right">
-            <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest block">Total Crew</span>
-            <span className="text-2xl font-black" style={{ color: PANGEA_YELLOW }}>{activeStaff.length}</span>
+        <div className="flex items-center space-x-4">
+          {userRole === 'Admin' && onSyncAll && (
+            <button 
+              onClick={onSyncAll}
+              className="bg-slate-800 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-black transition-all flex items-center space-x-2 group"
+            >
+              <span className="text-lg group-hover:scale-110 transition-transform">☁️</span>
+              <span>Push All to Cloud</span>
+            </button>
+          )}
+          <div className="bg-white px-8 py-4 rounded-[2rem] shadow-sm border border-slate-100 flex items-center space-x-4">
+            <div className="text-right">
+              <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest block">Total Crew</span>
+              <span className="text-2xl font-black" style={{ color: PANGEA_YELLOW }}>{activeStaff.length}</span>
+            </div>
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white text-xl" style={{ backgroundColor: PANGEA_YELLOW }}>👤</div>
           </div>
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white text-xl" style={{ backgroundColor: PANGEA_YELLOW }}>👤</div>
         </div>
       </header>
 
