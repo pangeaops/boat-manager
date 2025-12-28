@@ -2,7 +2,7 @@
  * Pangea Ops - Google Sheets & Drive Sync Service
  * 
  * Optimized for Production (Netlify) + Google Apps Script
- * Includes an explicit Header Translation Layer for truncated spreadsheet columns.
+ * strictly aligned with user-provided CSV headers.
  */
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyK2c-jGvMxuoimp5nj1m_vfclV5cGY9h28oonObGQyJ46qpxlHmIThfJ5-3Svh6bL5w/exec";
@@ -18,60 +18,28 @@ export const SHEET_MAP: Record<string, string> = {
 };
 
 /**
- * MANDATORY MAPPING: These must match the EXACT text in Row 1 of your Google Sheet.
- * If your Sheet header is truncated (e.g. "passportNumbe"), this map fixes it.
- */
-const PERSONNEL_HEADER_MAP: Record<string, string> = {
-  "id": "id",
-  "name": "name",
-  "role": "role",
-  "phone": "phone",
-  "email": "email",
-  "idNumber": "idNumber",
-  "passportNumber": "passportNumbe", // Truncated in user sheet
-  "bloodType": "bloodType",
-  "allergies": "allergies",
-  "isActive": "isActive",
-  "inactiveReason": "inactiveReason",
-  "inactiveDate": "inactiveDate",
-  "bankName": "bankName",
-  "bankAccountNum": "bankAccountNum",
-  "bankAccountType": "bankAccountTyp", // Truncated in user sheet
-  "shirtSize": "shirtSize",
-  "pantsSize": "pantsSize",
-  "shoeSize": "shoeSize",
-  "dependent1Name": "dependent1Nam",   // Truncated in user sheet
-  "emergencyContactName": "emergencyContactName",
-  "emergencyContactPhone": "emergencyContactPhone"
-};
-
-/**
- * Prepares data for Google Sheets by flattening and translating keys.
+ * Prepares data for Google Sheets. 
+ * Serializes arrays and objects into JSON strings.
  */
 const serializeForSheet = (sheetName: string, data: any) => {
   if (!data) return null;
   const cleaned: any = {};
   
-  // Ensure 'id' is always first for Column A matching
-  if (data.id) cleaned['id'] = data.id;
-
+  // For AuditLogs and Boats, 'id' is in Column A.
+  // For Personnel, Column A is 'name'. We send 'id' as a hidden field if needed, 
+  // but we prioritize matching the Sheet's Row 1 headers.
   Object.keys(data).forEach(key => {
-    if (key === 'id') return; // Handled above
-
-    // Translate key if we are syncing Personnel
-    const targetKey = (sheetName === 'Personnel' && PERSONNEL_HEADER_MAP[key]) 
-      ? PERSONNEL_HEADER_MAP[key] 
-      : key;
-
     const val = data[key];
+    
+    // Handle specific data types for Sheet compatibility
     if (typeof val === 'boolean') {
-      cleaned[targetKey] = val ? "TRUE" : "FALSE";
+      cleaned[key] = val ? "TRUE" : "FALSE";
     } else if (val === null || val === undefined) {
-      cleaned[targetKey] = "";
+      cleaned[key] = "";
     } else if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
-      cleaned[targetKey] = JSON.stringify(val);
+      cleaned[key] = JSON.stringify(val);
     } else {
-      cleaned[targetKey] = val;
+      cleaned[key] = val;
     }
   });
   
@@ -81,34 +49,25 @@ const serializeForSheet = (sheetName: string, data: any) => {
 /**
  * Reverses serialization from Sheet data back into JSON objects.
  */
-const deserializeFromSheet = (sheetName: string, item: any) => {
+const deserializeFromSheet = (item: any) => {
   if (!item) return item;
   const expanded: any = {};
   
-  // Create reverse map for Personnel to restore internal keys
-  const REVERSE_MAP: Record<string, string> = {};
-  if (sheetName === 'Personnel') {
-    Object.entries(PERSONNEL_HEADER_MAP).forEach(([appKey, sheetKey]) => {
-      REVERSE_MAP[sheetKey] = appKey;
-    });
-  }
-
   Object.keys(item).forEach(key => {
-    const targetKey = REVERSE_MAP[key] || key;
     const val = item[key];
     
     if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
       try {
-        expanded[targetKey] = JSON.parse(val);
+        expanded[key] = JSON.parse(val);
       } catch {
-        expanded[targetKey] = val;
+        expanded[key] = val;
       }
     } else if (val === "TRUE") {
-      expanded[targetKey] = true;
+      expanded[key] = true;
     } else if (val === "FALSE") {
-      expanded[targetKey] = false;
+      expanded[key] = false;
     } else {
-      expanded[targetKey] = val;
+      expanded[key] = val;
     }
   });
   
@@ -117,7 +76,7 @@ const deserializeFromSheet = (sheetName: string, item: any) => {
 
 export const syncToSheet = async (sheetName: string, data: any) => {
   if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_GOOGLE_APPS_SCRIPT_URL_HERE")) {
-    console.warn(`[PangeaCloud] Sync aborted: No URL.`);
+    console.warn(`[PangeaCloud] Sync aborted: No valid Script URL found.`);
     return false;
   }
 
@@ -127,10 +86,10 @@ export const syncToSheet = async (sheetName: string, data: any) => {
       sheet: sheetName,
       data: serializeForSheet(sheetName, data),
       _timestamp: new Date().toISOString(),
-      _client: "PangeaOps-SyncEngine-V2"
+      _client: "PangeaOps-V3-Production"
     };
 
-    // Use text/plain with no-cors to bypass OPTIONS preflight which GAS doesn't handle well
+    // Use text/plain with no-cors to bypass OPTIONS preflight
     await fetch(SCRIPT_URL, {
       method: 'POST',
       mode: 'no-cors', 
@@ -139,7 +98,7 @@ export const syncToSheet = async (sheetName: string, data: any) => {
       body: JSON.stringify(payload),
     });
 
-    console.log(`[PangeaCloud] Dispatched to ${sheetName} successfully.`);
+    console.log(`[PangeaCloud] Data dispatched to ${sheetName} successfully.`);
     return true;
   } catch (error) {
     console.error(`[PangeaCloud] Sync failed for ${sheetName}:`, error);
@@ -158,7 +117,7 @@ export const fetchAppData = async () => {
       redirect: 'follow'
     });
 
-    if (!response.ok) throw new Error("Connection failed");
+    if (!response.ok) throw new Error("Cloud bridge timeout.");
 
     const rawData = await response.json();
     const normalized: any = {};
@@ -168,7 +127,7 @@ export const fetchAppData = async () => {
       const rows = rawData[sheetKey];
       
       if (Array.isArray(rows)) {
-        normalized[stateKey] = rows.map(row => deserializeFromSheet(sheetKey, row));
+        normalized[stateKey] = rows.map(row => deserializeFromSheet(row));
       } else {
         normalized[stateKey] = rows;
       }
