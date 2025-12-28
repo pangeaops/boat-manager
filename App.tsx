@@ -28,7 +28,6 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingReport, setPendingReport] = useState<'daily' | 'weekly' | null>(null);
   
-  // Ref to track last manual interaction time
   const lastManualUpdateRef = useRef<number>(0);
 
   const [data, setData] = useState<AppData>(() => {
@@ -154,7 +153,7 @@ const App: React.FC = () => {
     recordManualAction();
     setData(prev => ({ ...prev, personnel: [...prev.personnel, person] }));
     createLog('Staff Onboarded', person.name, 'Personnel');
-    await syncToSheet('Personnel', person); // Corrected tab name
+    await syncToSheet('Personnel', person);
     setActiveTab('personnel_hub');
   };
 
@@ -165,23 +164,45 @@ const App: React.FC = () => {
       personnel: prev.personnel.map(p => p.id === person.id ? person : p) 
     }));
     createLog('Staff Profile Updated', person.name, 'Personnel');
-    await syncToSheet('Personnel', person); // Corrected tab name
+    await syncToSheet('Personnel', person);
   };
 
   const syncAllPersonnel = async () => {
     setIsSyncing(true);
-    createLog('Bulk Sync Triggered', 'Starting full personnel data push to Cloud', 'Personnel');
+    // 1. Log the initiation
+    const startLog: AuditLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString(),
+      action: 'Bulk Sync Triggered',
+      details: `Mapping ${data.personnel.length} staff profiles to Cloud Headers`,
+      category: 'Personnel'
+    };
+    setData(prev => ({ ...prev, logs: [...prev.logs, startLog] }));
+    await syncToSheet('AuditLogs', { ...startLog, user: currentUser?.name || 'System' });
+
     try {
-      // Loop through personnel with a 200ms delay to avoid GAS request collisions
+      // 2. Loop through and sync each record
       for (const person of data.personnel) {
-        await syncToSheet('Personnel', person); // Corrected tab name
-        await new Promise(resolve => setTimeout(resolve, 200)); 
+        await syncToSheet('Personnel', person);
+        // Sequential pacing (400ms) prevents Google Apps Script collisions
+        await new Promise(resolve => setTimeout(resolve, 400)); 
       }
-      alert(`Success: ${data.personnel.length} personnel records have been verified and pushed to the "Personnel" tab in Google Sheets.`);
-      createLog('Bulk Sync Completed', `Successfully synced ${data.personnel.length} records`, 'Personnel');
+      
+      // 3. Log the successful conclusion
+      const endLog: AuditLog = {
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: new Date().toISOString(),
+        action: 'Bulk Sync Completed',
+        details: `Verified ${data.personnel.length} rows updated in Cloud`,
+        category: 'Personnel'
+      };
+      setData(prev => ({ ...prev, logs: [...prev.logs, endLog] }));
+      await syncToSheet('AuditLogs', { ...endLog, user: currentUser?.name || 'System' });
+      
+      alert(`Success: All ${data.personnel.length} personnel files have been mapped and synchronized to the Google Sheet.`);
     } catch (err) {
-      console.error("Bulk sync failed", err);
-      alert("Failed to push some records. Check your internet connection.");
+      console.error("Bulk sync error", err);
+      alert("Synchronization interrupted. Some records may not have synced.");
     } finally {
       setIsSyncing(false);
     }
