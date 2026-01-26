@@ -1,3 +1,4 @@
+
 export enum Priority {
   LOW = 'Low',
   MEDIUM = 'Medium',
@@ -7,9 +8,9 @@ export enum Priority {
 
 export enum PersonnelRole {
   CEO = 'Commodore & CEO',
-  CAPTAIN_MOTOMARLIN = 'Capitán Motomarlin',
-  CAPTAIN_CLEARBOAT = 'Capitán Clearboat',
-  MARINE = 'Marinero',
+  CAPTAIN_MOTOMARLIN = 'Capitan Motomarlin',
+  CAPTAIN_CLEARBOAT = 'Capitan Clearboat',
+  MARINE = 'Marino',
   GENERAL_HELPER = 'Ayudante General',
   MECHANIC = 'Mecánico',
   OPERATIONS = 'Operaciones'
@@ -34,13 +35,26 @@ export interface ProvisionStock {
 
 export interface InventoryItem {
   id: string;
+  airtableRecordId?: string;
   name: string;
-  category: 'Dock' | 'Vessel Gear' | 'Consumables' | 'Office' | 'Mechanical';
+  category: 'Drinks' | 'Snacks' | 'Equipment' | 'Mechanical' | 'Dock' | 'Vessel Gear' | 'Consumables' | 'Office';
   currentStock: number;
+  finalStock?: number;
   minStock: number;
   unit: string;
   location: string;
   lastUpdated: string;
+}
+
+export interface TourProvision {
+  id: string;
+  tourId: string;
+  inventoryId: string;
+  departureQty: number;
+  arrivalQty: number;
+  quantityUsed: number;
+  item?: string;
+  category?: string;
 }
 
 export interface WildlifeEncounter {
@@ -74,6 +88,7 @@ export interface PostTripChecklist {
 
 export interface Tour {
   id: string;
+  airtableRecordId?: string;
   date: string;
   departureTime: string;
   arrivalTime?: string;
@@ -111,6 +126,7 @@ export interface Tour {
 
 export interface Task {
   id: string;
+  airtableRecordId?: string;
   boatId: string;
   taskType: string;
   priority: Priority;
@@ -123,7 +139,8 @@ export interface Task {
 
 export interface Boat {
   id: string;
-  name: string;
+  airtableRecordId?: string;
+  boatname: string;
   model: string;
   year: number;
   length: string;
@@ -139,14 +156,15 @@ export interface Boat {
   licenseNumber: string;
   licenseExpDate: string;
   status: BoatStatus;
+  safetyStatus?: string;
   lastServiceDate?: string;
-  mandatoryChecklist: string[];
 }
 
 export type InactiveReason = 'Firing' | 'Resignation' | 'No Show' | 'Other';
 
 export interface Personnel {
   id: string;
+  airtableRecordId?: string;
   name: string;
   role: PersonnelRole;
   phone: string;
@@ -205,6 +223,7 @@ export interface AppData {
   personnel: Personnel[];
   tours: Tour[];
   inventory: InventoryItem[];
+  tourProvisions: TourProvision[];
   logs: AuditLog[];
   lastOverdueCheck?: string;
 }
