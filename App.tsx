@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppData, Boat, Personnel, Tour, AuditLog, BoatStatus, AppUser, InventoryItem, Task, TourProvision, Priority } from './types.ts';
 import Layout from './components/Layout.tsx';
 import Dashboard from './components/Dashboard.tsx';
@@ -14,10 +14,8 @@ import Login from './components/Login.tsx';
 import AdminDashboard from './components/AdminDashboard.tsx';
 import InventoryDashboard from './components/InventoryDashboard.tsx';
 import { INITIAL_DATA_KEY, FULL_FLEET, INITIAL_PERSONNEL } from './constants.ts';
-import { generateDailyOperationalSummary } from './services/geminiService.ts';
 import { syncToSheet, fetchAppData, deleteFromSheet } from './services/sheetService.ts';
-import { checkReportStatus, markReportSent, snoozeReport } from './services/reportService.ts';
-import { jsPDF } from 'jspdf';
+import { generateDailyOperationalSummary } from './services/geminiService.ts';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
@@ -25,7 +23,6 @@ const App: React.FC = () => {
   const [editingBoat, setEditingBoat] = useState<Boat | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
-  const [pendingReport, setPendingReport] = useState<'daily' | 'weekly' | null>(null);
 
   const [data, setData] = useState<AppData>(() => {
     const saved = localStorage.getItem(INITIAL_DATA_KEY);
@@ -70,7 +67,6 @@ const App: React.FC = () => {
         logs: remoteData.logs || prev.logs
       }));
       setLastSync(new Date());
-      await createLog('Data Sync', 'Fleet', 'System state synchronized with cloud database.');
     }
     setIsSyncing(false);
   }, [currentUser]);
@@ -92,10 +88,7 @@ const App: React.FC = () => {
     await createLog('User Login', 'Personnel', `${user.name} access authorized.`);
   };
 
-  const handleLogout = async () => {
-    if (currentUser) {
-      await createLog('User Logout', 'Personnel', `${currentUser.name} signed out.`);
-    }
+  const handleLogout = () => {
     setCurrentUser(null);
   };
 
@@ -106,11 +99,7 @@ const App: React.FC = () => {
       boats: exists ? prev.boats.map(b => b.id === boat.id ? boat : b) : [...prev.boats, boat]
     }));
     const success = await syncToSheet('Boats', boat);
-    await createLog(
-      exists ? 'Boat Updated' : 'Boat Registered', 
-      'Fleet', 
-      `${exists ? 'Updated' : 'Registered'} vessel: ${boat.boatname}`
-    );
+    await createLog(exists ? 'Boat Updated' : 'Boat Registered', 'Fleet', `${exists ? 'Updated' : 'Registered'} vessel: ${boat.boatname}`);
     setEditingBoat(null);
     return success;
   };
@@ -130,61 +119,29 @@ const App: React.FC = () => {
 
     await syncToSheet('Tasks', task);
     if (updatedBoat) await syncToSheet('Boats', updatedBoat);
-    
-    await createLog(
-      'Task Created', 
-      'Task', 
-      `Scheduled ${task.taskType} for ${boat?.boatname || 'Vessel'}. Priority: ${task.priority}`
-    );
+    await createLog('Task Created', 'Task', `Scheduled ${task.taskType} for ${boat?.boatname || 'Vessel'}.`);
   };
 
   const updateTaskStatus = async (taskId: string, status: Task['status']) => {
     const task = data.tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    // To ensure dashboard and rolling logs filter properly, we set the dueDate to the day of completion if marking as finished
     const todayStr = new Date().toISOString().split('T')[0];
-    const updatedTask: Task = { 
-      ...task, 
-      status, 
-      dueDate: status === 'Completed' ? todayStr : task.dueDate 
-    };
-    
-    const boatId = task.boatId;
-    const boat = data.boats.find(b => b.id === boatId);
+    const updatedTask: Task = { ...task, status, dueDate: status === 'Completed' ? todayStr : task.dueDate };
+    const boat = data.boats.find(b => b.id === task.boatId);
 
     setData(prev => ({
       ...prev,
       tasks: prev.tasks.map(t => t.id === taskId ? updatedTask : t)
     }));
     await syncToSheet('Tasks', updatedTask);
-    
-    await createLog(
-      'Task Status Updated', 
-      'Task', 
-      `Task "${task.taskType}" marked as ${status} for ${boat?.boatname || 'Vessel'}`
-    );
+    await createLog('Task Status Updated', 'Task', `Task "${task.taskType}" marked as ${status}.`);
 
-    if (!boat) return;
-
-    if (status === 'Pending' || status === 'Ongoing') {
-      if (boat.status !== 'In Maintenance') {
-        const updatedBoat = { ...boat, status: 'In Maintenance' as BoatStatus };
-        setData(prev => ({
-          ...prev,
-          boats: prev.boats.map(b => b.id === boatId ? updatedBoat : b)
-        }));
-        await syncToSheet('Boats', updatedBoat);
-      }
-    } 
-    else if (status === 'Completed') {
-      const remainingTasks = data.tasks.filter(t => t.boatId === boatId && t.id !== taskId && t.status !== 'Completed');
-      if (remainingTasks.length === 0) {
+    if (boat && status === 'Completed') {
+      const remaining = data.tasks.filter(t => t.boatId === boat.id && t.id !== taskId && t.status !== 'Completed');
+      if (remaining.length === 0) {
         const updatedBoat = { ...boat, status: 'Available' as BoatStatus };
-        setData(prev => ({
-          ...prev,
-          boats: prev.boats.map(b => b.id === boatId ? updatedBoat : b)
-        }));
+        setData(prev => ({ ...prev, boats: prev.boats.map(b => b.id === boat.id ? updatedBoat : b) }));
         await syncToSheet('Boats', updatedBoat);
       }
     }
@@ -193,28 +150,57 @@ const App: React.FC = () => {
   const addTour = async (tour: Tour) => {
     setData(prev => ({ ...prev, tours: [...prev.tours, tour] }));
     await syncToSheet('Tours', tour);
-    
-    const boatName = data.boats.find(b => b.id === tour.boatId)?.boatname || 'Vessel';
-    await createLog(
-      'Tour Dispatched', 
-      'Tour', 
-      `Vessel ${boatName} dispatched on ${tour.route} with ${tour.paxCount} PAX.`
-    );
+    await createLog('Tour Dispatched', 'Tour', `Vessel dispatched on ${tour.route} with ${tour.paxCount} PAX.`);
     
     for (const prov of tour.provisions.filter(p => p.departureQty > 0)) {
       const junctionId = `${tour.id}_${prov.item.replace(/\s+/g, '_')}`;
-      const provision: TourProvision = {
+      await syncToSheet('TourProvisions', {
         id: junctionId,
-        tourId: tour.id,
-        inventoryId: prov.item, 
+        tourId: [tour.id],
+        inventoryId: [prov.item], 
         departureQty: prov.departureQty,
         arrivalQty: 0,
-        quantityUsed: 0,
-        item: prov.item,
-        category: prov.category
-      };
-      await syncToSheet('TourProvisions', provision);
+        quantityUsed: 0
+      });
     }
+
+    if (tour.isSupportBoatRequired && tour.supportProvisions) {
+      for (const prov of tour.supportProvisions.filter(p => p.departureQty > 0)) {
+        const junctionId = `${tour.id}_SUPPORT_${prov.item.replace(/\s+/g, '_')}`;
+        await syncToSheet('TourProvisions', {
+          id: junctionId,
+          tourId: [tour.id],
+          inventoryId: [prov.item], 
+          departureQty: prov.departureQty,
+          arrivalQty: 0,
+          quantityUsed: 0
+        });
+      }
+    }
+  };
+
+  const reconcileInventory = async (items: { item: string, used: number }[]) => {
+    const updates: InventoryItem[] = [];
+    for (const entry of items) {
+      if (entry.used <= 0) continue;
+      const invItem = data.inventory.find(i => i.name === entry.item);
+      if (invItem) {
+        const newStock = Math.max(0, invItem.currentStock - entry.used);
+        const updatedItem = { ...invItem, currentStock: newStock, lastUpdated: new Date().toISOString() };
+        updates.push(updatedItem);
+        await syncToSheet('Inventory', updatedItem);
+        if (newStock < invItem.minStock) {
+          await createLog('Low Stock Alert', 'Inventory', `Item "${invItem.name}" level dropped to ${newStock}.`);
+        }
+      }
+    }
+    return updates;
+  };
+
+  const handleSendReport = async () => {
+    const summary = await generateDailyOperationalSummary(data);
+    await createLog('Daily Report Dispatched', 'Personnel', 'Automated operational summary generated by Gemini AI.');
+    alert("Report Generated:\n\n" + summary);
   };
 
   const updateTour = async (tourId: string, updates: Partial<Tour>) => {
@@ -226,102 +212,86 @@ const App: React.FC = () => {
       ...prev,
       tours: prev.tours.map(t => t.id === tourId ? updatedTour : t)
     }));
-
     await syncToSheet('Tours', updatedTour);
 
     if (updates.status === 'Completed') {
-       const boatName = data.boats.find(b => b.id === updatedTour.boatId)?.boatname || 'Vessel';
-       await createLog(
-        'Tour Completed', 
-        'Tour', 
-        `Trip on ${boatName} completed. Gas: ${updatedTour.startGas}->${updatedTour.endGas}`
-      );
-    }
-    
-    if (updatedTour.status === 'Completed') {
-      const inventoryUpdates: InventoryItem[] = [];
-      const newLogs: AuditLog[] = [];
-
+      await createLog('Tour Completed', 'Tour', `Trip on ${data.boats.find(b => b.id === tour.boatId)?.boatname} reconciled.`);
+      
+      const aggregatedUsage: Record<string, number> = {};
+      
+      // Primary reconciliation
       for (const prov of updatedTour.provisions) {
         const used = prov.departureQty - (prov.arrivalQty || 0);
-        const junctionId = `${updatedTour.id}_${prov.item.replace(/\s+/g, '_')}`;
+        if (used > 0) aggregatedUsage[prov.item] = (aggregatedUsage[prov.item] || 0) + used;
         
-        const provisionRecord: TourProvision = {
-          id: junctionId,
-          tourId: updatedTour.id,
-          inventoryId: prov.item,
+        await syncToSheet('TourProvisions', {
+          id: `${updatedTour.id}_${prov.item.replace(/\s+/g, '_')}`,
+          tourId: [updatedTour.id],
+          inventoryId: [prov.item],
           departureQty: prov.departureQty,
           arrivalQty: prov.arrivalQty || 0,
           quantityUsed: used
-        };
-        await syncToSheet('TourProvisions', provisionRecord);
+        });
+      }
 
-        const invItem = data.inventory.find(i => i.name === prov.item);
-        if (invItem && used > 0) {
-          const newStock = Math.max(0, invItem.currentStock - used);
-          const updatedItem = { ...invItem, currentStock: newStock, lastUpdated: new Date().toISOString() };
-          inventoryUpdates.push(updatedItem);
-          await syncToSheet('Inventory', updatedItem);
+      // Support reconciliation
+      if (updatedTour.isSupportBoatRequired && updatedTour.supportProvisions) {
+        for (const prov of updatedTour.supportProvisions) {
+          const used = prov.departureQty - (prov.arrivalQty || 0);
+          if (used > 0) aggregatedUsage[prov.item] = (aggregatedUsage[prov.item] || 0) + used;
 
-          if (newStock < invItem.minStock) {
-            const logId = `LOG-INV-${Math.random().toString(36).substr(2, 5)}`;
-            const log: AuditLog = {
-              id: logId,
-              timestamp: new Date().toISOString(),
-              action: 'Low Stock Alert',
-              category: 'Inventory',
-              details: `Item "${invItem.name}" stock level (${newStock}) is below minimum (${invItem.minStock}).`
-            };
-            newLogs.push(log);
-            await syncToSheet('AuditLogs', log);
-          }
+          await syncToSheet('TourProvisions', {
+            id: `${updatedTour.id}_SUPPORT_${prov.item.replace(/\s+/g, '_')}`,
+            tourId: [updatedTour.id],
+            inventoryId: [prov.item],
+            departureQty: prov.departureQty,
+            arrivalQty: prov.arrivalQty || 0,
+            quantityUsed: used
+          });
         }
       }
 
+      const usageArray = Object.entries(aggregatedUsage).map(([item, used]) => ({ item, used }));
+      const invUpdates = await reconcileInventory(usageArray);
+      
       setData(prev => ({
         ...prev,
-        inventory: prev.inventory.map(i => {
-          const upd = inventoryUpdates.find(u => u.id === i.id);
-          return upd || i;
-        }),
-        logs: [...newLogs, ...prev.logs]
+        inventory: prev.inventory.map(i => invUpdates.find(u => u.id === i.id) || i)
       }));
 
-      const boat = data.boats.find(b => b.id === updatedTour.boatId);
+      const boat = data.boats.find(b => b.id === tour.boatId);
       if (boat) {
         const lastService = boat.lastServiceDate ? new Date(boat.lastServiceDate) : new Date(0);
         const toursSince = [...data.tours.filter(t => t.id !== tourId), updatedTour].filter(t => 
-          t.boatId === boat.id && 
-          t.status === 'Completed' && 
-          new Date(t.date) >= lastService
+          t.boatId === boat.id && t.status === 'Completed' && new Date(t.date) >= lastService
         );
         
-        const hoursAccumulated = toursSince.reduce((sum, t) => sum + ((t.hmiEnd || 0) - (t.hmiStart || 0)), 0);
+        const hoursAccumulated = toursSince.reduce((sum, t) => {
+          const hmiDelta = (t.hmiEnd || 0) - (t.hmiStart || 0);
+          const hmdDelta = (t.hmdEnd || 0) - (t.hmdStart || 0);
+          const hmcDelta = (t.hmcEnd || 0) - (t.hmcStart || 0);
+          return sum + Math.max(hmiDelta, hmdDelta, hmcDelta);
+        }, 0);
         
         if (hoursAccumulated >= 50) {
-          const existingAlert = data.tasks.find(t => t.boatId === boat.id && t.taskType.includes('50Hr Limit') && t.status !== 'Completed');
-          if (!existingAlert) {
-            const serviceTask: Task = {
-              id: `AUTO-SVC-${Math.random().toString(36).substr(2, 5)}`,
-              boatId: boat.id,
-              taskType: 'Service Required (50Hr Limit)',
-              priority: Priority.CRITICAL,
-              scheduledDate: new Date().toISOString().split('T')[0],
-              dueDate: new Date().toISOString().split('T')[0],
-              personnelInCharge: [],
-              status: 'Pending',
-              notes: `Auto-generated: Boat has accumulated ${hoursAccumulated.toFixed(1)} hrs since ${boat.lastServiceDate || 'initial record'}.`
-            };
-            
-            setData(prev => ({
-              ...prev,
-              tasks: [...prev.tasks, serviceTask],
-              boats: prev.boats.map(b => b.id === boat.id ? { ...b, status: 'In Maintenance' as BoatStatus } : b)
-            }));
-            await syncToSheet('Tasks', serviceTask);
-            await syncToSheet('Boats', { ...boat, status: 'In Maintenance' as BoatStatus });
-            await createLog('Service Alert Generated', 'Fleet', `Vessel ${boat.boatname} reached 50Hr service threshold.`);
-          }
+          const serviceTask: Task = {
+            id: `AUTO-SVC-${Math.random().toString(36).substr(2, 5)}`,
+            boatId: boat.id,
+            taskType: 'Service Required (50Hr Limit)',
+            priority: Priority.CRITICAL,
+            scheduledDate: new Date().toISOString().split('T')[0],
+            dueDate: new Date().toISOString().split('T')[0],
+            personnelInCharge: [],
+            status: 'Pending',
+            notes: `Auto-generated: Vessel reached ${hoursAccumulated.toFixed(1)} hrs since last service.`
+          };
+          setData(prev => ({
+            ...prev,
+            tasks: [...prev.tasks, serviceTask],
+            boats: prev.boats.map(b => b.id === boat.id ? { ...b, status: 'In Maintenance' as BoatStatus } : b)
+          }));
+          await syncToSheet('Tasks', serviceTask);
+          await syncToSheet('Boats', { ...boat, status: 'In Maintenance' as BoatStatus });
         }
       }
     }
@@ -331,63 +301,34 @@ const App: React.FC = () => {
     const exists = data.inventory.some(i => i.id === item.id);
     setData(prev => ({
       ...prev,
-      inventory: exists 
-        ? prev.inventory.map(i => i.id === item.id ? item : i)
-        : [...prev.inventory, item]
+      inventory: exists ? prev.inventory.map(i => i.id === item.id ? item : i) : [...prev.inventory, item]
     }));
-    
-    const success = await syncToSheet('Inventory', item);
-    await createLog(
-      exists ? 'Inventory Updated' : 'Inventory Item Registered', 
-      'Inventory', 
-      `Stock for "${item.name}" adjusted to ${item.currentStock} ${item.unit}.`
-    );
-    return success;
+    await syncToSheet('Inventory', item);
+    await createLog(exists ? 'Inventory Updated' : 'Inventory Registered', 'Inventory', `Stock adjusted for "${item.name}".`);
+    return true;
   };
 
   const updatePersonnel = async (person: Personnel) => {
-    const prevPerson = data.personnel.find(p => p.id === person.id);
-    const exists = !!prevPerson;
-    
+    const exists = data.personnel.some(p => p.id === person.id);
     setData(prev => ({ 
       ...prev, 
       personnel: exists ? prev.personnel.map(p => p.id === person.id ? person : p) : [...prev.personnel, person]
     }));
-
-    if (prevPerson && prevPerson.isActive && !person.isActive) {
-      await createLog('Personnel Archived', 'Personnel', `Staff member "${person.name}" archived. Reason: ${person.inactiveReason || 'Other'}`);
-    } else if (!exists) {
-      await createLog('Personnel Registered', 'Personnel', `New staff member "${person.name}" added to database.`);
-    } else {
-      await createLog('Personnel Profile Updated', 'Personnel', `Profile updated for ${person.name}.`);
-    }
-
-    const success = await syncToSheet('Personnel', person);
-    if (!success) {
-      alert("Registration Error: Failed to synchronize personnel data with the cloud. Please check your connection or contact the administrator.");
-    }
-    return success;
+    await createLog(exists ? 'Personnel Profile Updated' : 'Personnel Registered', 'Personnel', `${person.name} profile managed.`);
+    return await syncToSheet('Personnel', person);
   };
 
   if (!currentUser) return <Login onLogin={handleLogin} />;
 
-  const handleOnboardPersonnel = async (p: Personnel) => {
-    const success = await updatePersonnel({...p, isActive: true});
-    if (success) {
-      setActiveTab('personnel_hub');
-    }
-  };
-
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} user={currentUser} onLogout={handleLogout} isSyncing={isSyncing} lastSync={lastSync} data={data}>
-      {activeTab === 'dashboard' && <Dashboard data={data} onSendFullDailyReport={() => createLog('Daily Report Sent', 'Personnel', 'Automated Daily Summary triggered by Admin.')} isSyncing={isSyncing} />}
+      {activeTab === 'dashboard' && <Dashboard data={data} onSendFullDailyReport={handleSendReport} isSyncing={isSyncing} />}
       {activeTab === 'fleet' && <BoatDashboard data={data} userRole={currentUser.role} onUpdateTaskStatus={updateTaskStatus} onEditBoat={setEditingBoat} onUpdateBoatStatus={(id, s) => {
-        const boat = data.boats.find(b => b.id === id);
-        if (boat) addBoat({...boat, status: s});
+        const b = data.boats.find(x => x.id === id); if(b) addBoat({...b, status: s});
       }} onSyncAll={refreshData} />}
       {activeTab === 'tours' && <TourLogForm data={data} onAddTour={addTour} onUpdateTour={updateTour} logAction={createLog} />}
       {activeTab === 'personnel_hub' && <PersonnelDashboard data={data} userRole={currentUser.role} onUpdatePersonnel={updatePersonnel} onDeletePersonnel={(id, rid) => deleteFromSheet('Personnel', 'id', id, rid)} onSyncAll={refreshData} />}
-      {activeTab === 'maintenance' && <MaintenanceForm data={data} onAddTask={addMaintenanceTask} onSendReport={() => createLog('Maintenance Report Exported', 'Task', 'PDF report generated for technical team.')} onUpdateStatus={updateTaskStatus} logAction={createLog} />}
+      {activeTab === 'maintenance' && <MaintenanceForm data={data} onAddTask={addMaintenanceTask} onSendReport={() => {}} onUpdateStatus={updateTaskStatus} logAction={createLog} />}
       {activeTab === 'inventory' && <InventoryDashboard data={data} onUpdateInventory={updateInventory} />}
       {activeTab === 'protocols' && <Protocols />}
       {activeTab === 'admin_dashboard' && <AdminDashboard data={data} />}
@@ -395,7 +336,7 @@ const App: React.FC = () => {
       {activeTab === 'add_forms' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
           {currentUser.role === 'Admin' ? <AddBoatForm onAddBoat={addBoat} /> : <div>Admin access required.</div>}
-          {currentUser.role === 'Admin' ? <AddPersonnelForm onAddPersonnel={handleOnboardPersonnel} /> : <div>Admin access required.</div>}
+          {currentUser.role === 'Admin' ? <AddPersonnelForm onAddPersonnel={updatePersonnel} /> : <div>Admin access required.</div>}
         </div>
       )}
       {editingBoat && (

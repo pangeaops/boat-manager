@@ -1,3 +1,4 @@
+
 import { Boat, Personnel, AppData, Tour, Task } from "../types";
 
 export interface ComplianceAlert {
@@ -25,7 +26,7 @@ export const checkCompliance = (data: AppData): ComplianceAlert[] => {
         alerts.push({
           id: boat.id,
           type: 'Boat',
-          name: boat.name,
+          name: boat.boatname,
           date: boat.licenseExpDate,
           severity: 'Critical',
           daysLeft: diffDays
@@ -34,7 +35,7 @@ export const checkCompliance = (data: AppData): ComplianceAlert[] => {
         alerts.push({
           id: boat.id,
           type: 'Boat',
-          name: boat.name,
+          name: boat.boatname,
           date: boat.licenseExpDate,
           severity: 'Warning',
           daysLeft: diffDays
@@ -75,16 +76,17 @@ export const checkCompliance = (data: AppData): ComplianceAlert[] => {
   // Check Overdue Tours (Arrival log missing after 9 hours)
   const OVERDUE_THRESHOLD_MS = 9 * 60 * 60 * 1000;
   data.tours.forEach(tour => {
-    if (tour.status === 'Dispatched') {
-      const timeStr = tour.departureTime.includes(':') && tour.departureTime.length === 4 
-        ? `0${tour.departureTime}` 
-        : tour.departureTime;
+    if (tour.status === 'Dispatched' && tour.departureTime) {
+      const depTime = String(tour.departureTime);
+      const timeStr = (depTime.includes(':') && depTime.length === 4)
+        ? `0${depTime}` 
+        : depTime;
       
       const departureDateTime = new Date(`${tour.date}T${timeStr}`);
       const elapsed = now.getTime() - departureDateTime.getTime();
 
-      if (elapsed > OVERDUE_THRESHOLD_MS) {
-        const boatName = data.boats.find(b => b.id === tour.boatId)?.name || 'Unknown Vessel';
+      if (!isNaN(departureDateTime.getTime()) && elapsed > OVERDUE_THRESHOLD_MS) {
+        const boatName = data.boats.find(b => b.id === tour.boatId)?.boatname || 'Unknown Vessel';
         const hoursElapsed = Math.floor(elapsed / (1000 * 60 * 60));
         
         alerts.push({
@@ -107,7 +109,7 @@ export const checkCompliance = (data: AppData): ComplianceAlert[] => {
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
       if (diffDays < 0) {
-        const boatName = data.boats.find(b => b.id === task.boatId)?.name || 'Generic';
+        const boatName = data.boats.find(b => b.id === task.boatId)?.boatname || 'Generic';
         alerts.push({
           id: task.id,
           type: 'Task',
@@ -117,7 +119,7 @@ export const checkCompliance = (data: AppData): ComplianceAlert[] => {
           daysLeft: diffDays
         });
       } else if (diffDays <= 2) {
-        const boatName = data.boats.find(b => b.id === task.boatId)?.name || 'Generic';
+        const boatName = data.boats.find(b => b.id === task.boatId)?.boatname || 'Generic';
         alerts.push({
           id: task.id,
           type: 'Task',

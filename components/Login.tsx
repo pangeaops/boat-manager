@@ -53,25 +53,25 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-4">
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Email Access</label>
+              <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest px-1">Email Access</label>
               <input 
                 type="email" 
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="user@pangeabocas.com" 
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-bold outline-none focus:ring-4 focus:ring-[#ffb519]/20 focus:border-[#ffb519] transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-bold text-slate-800 outline-none focus:ring-4 focus:ring-[#ffb519]/20 focus:border-[#ffb519] transition-all"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Password</label>
+              <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest px-1">Password</label>
               <input 
                 type="password" 
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••" 
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-bold outline-none focus:ring-4 focus:ring-[#ffb519]/20 focus:border-[#ffb519] transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 font-bold text-slate-800 outline-none focus:ring-4 focus:ring-[#ffb519]/20 focus:border-[#ffb519] transition-all"
               />
             </div>
           </div>

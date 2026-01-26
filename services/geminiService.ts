@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { AppData, Task } from "../types";
 
@@ -19,7 +20,7 @@ export const getFleetInsights = async (data: AppData) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const prompt = `
     Analyze this fleet data and provide a concise summary of operational health:
-    Boats: ${JSON.stringify(data.boats.map(b => ({ name: b.name, status: b.status })))}
+    Boats: ${JSON.stringify(data.boats.map(b => ({ name: b.boatname, status: b.status })))}
     Tasks: ${JSON.stringify(data.tasks.filter(t => t.status !== 'Completed'))}
     
     Focus on:

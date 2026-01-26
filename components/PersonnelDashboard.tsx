@@ -6,398 +6,203 @@ import { PANGEA_YELLOW, PANGEA_DARK } from '../constants';
 interface PersonnelDashboardProps {
   data: AppData;
   userRole: UserRole;
-  onUpdatePersonnel: (person: Personnel) => void;
+  onUpdatePersonnel: (person: Personnel) => Promise<boolean | void>;
+  onDeletePersonnel: (personId: string, airtableRecordId?: string) => void;
   onSyncAll?: () => void;
 }
 
-const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole, onUpdatePersonnel, onSyncAll }) => {
+const PersonnelDashboard: React.FC<PersonnelDashboardProps> = ({ data, userRole, onUpdatePersonnel, onDeletePersonnel, onSyncAll }) => {
   const [editingPersonId, setEditingPersonId] = useState<string | null>(null);
   const [viewingProfileId, setViewingProfileId] = useState<string | null>(null);
   const [showPastEmployees, setShowPastEmployees] = useState(false);
 
-  const isExpired = (dateStr?: string) => {
-    if (!dateStr) return false;
-    const exp = new Date(dateStr);
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return exp.getTime() < today.getTime();
-  };
+  const personnelList = data?.personnel || [];
+  const activeStaff = personnelList.filter(p => p.isActive !== false);
+  const inactiveStaff = personnelList.filter(p => p.isActive === false);
+  const viewingProfile = personnelList.find(p => p.id === viewingProfileId);
+  const editingPerson = personnelList.find(p => p.id === editingPersonId);
 
-  const isExpiringSoon = (dateStr?: string) => {
-    if (!dateStr) return false;
-    const exp = new Date(dateStr);
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const diff = exp.getTime() - today.getTime();
-    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-    return days > 0 && days <= 30;
-  };
+  const ROLE_ORDER = [
+    PersonnelRole.CEO,
+    PersonnelRole.CAPTAIN_MOTOMARLIN,
+    PersonnelRole.CAPTAIN_CLEARBOAT,
+    PersonnelRole.MARINE,
+    PersonnelRole.GENERAL_HELPER,
+    PersonnelRole.MECHANIC,
+    PersonnelRole.OPERATIONS
+  ];
 
-  // Derived states to ensure we always have the freshest data from 'data.personnel'
-  const activeStaff = data.personnel.filter(p => p.isActive !== false);
-  const inactiveStaff = data.personnel.filter(p => p.isActive === false);
-  
-  const viewingProfile = data.personnel.find(p => p.id === viewingProfileId);
-  const editingPerson = data.personnel.find(p => p.id === editingPersonId);
+  const StaffCard: React.FC<{ person: Personnel }> = ({ person }) => (
+    <div className={`bg-white rounded-[2.5rem] border-2 shadow-sm flex flex-col h-full overflow-hidden group hover:shadow-2xl transition-all duration-500 ${person.isActive ? 'border-slate-100' : 'border-red-50 opacity-80 grayscale-[0.5]'}`}>
+      <div className="bg-slate-50 p-6 flex items-center gap-4 border-b border-slate-100">
+        <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center overflow-hidden border border-slate-200">
+          {person.profilePhoto ? <img src={person.profilePhoto} className="w-full h-full object-cover" /> : <span className="text-3xl opacity-20">👤</span>}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-md font-black text-slate-900 truncate">{person.name}</h4>
+          <span className="text-[8px] font-black text-[#ffb519] uppercase tracking-widest bg-amber-50 px-2 py-0.5 rounded-full">{person.role}</span>
+        </div>
+        {userRole === 'Admin' && (
+          <button onClick={() => setEditingPersonId(person.id)} className="p-2 bg-white rounded-xl text-slate-400 hover:text-amber-500 shadow-sm border border-slate-100 transition-colors">
+            ✏️
+          </button>
+        )}
+      </div>
+      
+      <div className="p-6 space-y-4 flex-1">
+        {/* Core Info Grid */}
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div className="col-span-1">
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">ID / Passport</p>
+            <p className="font-black text-slate-800 truncate text-[11px]">{person.idNumber || person.passportNumber || '—'}</p>
+          </div>
+          <div className="col-span-1">
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Phone</p>
+            <p className="font-black text-slate-800 text-[11px]">{person.phone || '—'}</p>
+          </div>
+          
+          <div className="col-span-2 pt-2 border-t border-slate-50">
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">License Credential</p>
+            <div className="flex justify-between items-center bg-slate-50/80 px-2 py-1.5 rounded-lg border border-slate-100">
+              <p className="font-black text-slate-700 text-[10px]">{person.licenseNumber || 'No Record'}</p>
+              <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase ${new Date(person.licenseExpDate || '') < new Date() ? 'bg-red-500 text-white animate-pulse' : 'bg-[#ffb519]/20 text-[#ffb519]'}`}>
+                {person.licenseExpDate ? `Exp: ${person.licenseExpDate}` : 'No Expiry'}
+              </span>
+            </div>
+          </div>
+        </div>
 
-  const getGroupedPersonnel = (list: Personnel[]) => {
-    const groups: Record<string, Personnel[]> = {};
-    list.forEach(p => {
-      if (!groups[p.role]) groups[p.role] = [];
-      groups[p.role].push(p);
-    });
-    return groups;
-  };
+        <div className="bg-red-50 p-4 rounded-2xl border border-red-100/50 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[8px] font-black text-red-400 uppercase tracking-widest">Emergency Contact</p>
+            <span className="text-[10px]">🚨</span>
+          </div>
+          <div className="space-y-1">
+            <p className="font-black text-slate-800 text-[10px] truncate">{person.emergencyContactName || 'EMERGENCY: Not Set'}</p>
+            <p className="font-bold text-slate-500 text-[9px]">{person.emergencyContactPhone || '—'}</p>
+          </div>
+          <div className="pt-2 border-t border-red-100/50">
+            <p className="text-[8px] font-black text-red-400 uppercase tracking-widest">Medical / Allergies</p>
+            <p className={`font-black text-[10px] mt-0.5 ${person.allergies && person.allergies.toLowerCase() !== 'none' ? 'text-red-600 bg-red-100 px-2 py-0.5 rounded inline-block' : 'text-slate-400'}`}>
+              {person.allergies || 'None reported'}
+            </p>
+          </div>
+        </div>
 
-  const activeGrouped = getGroupedPersonnel(activeStaff);
+        {!person.isActive && (
+          <div className="p-3 bg-red-100 rounded-xl border border-red-200">
+            <p className="text-[8px] font-black text-red-800 uppercase">Archive Reason</p>
+            <p className="font-black text-red-900 text-[10px]">{person.inactiveReason || 'No reason provided'}</p>
+          </div>
+        )}
+      </div>
 
-  const ProfileDetailRow = ({ label, value, highlight }: { label: string, value?: string | number, highlight?: 'Critical' | 'Warning' }) => (
-    <div className={`flex justify-between items-center py-3 border-b border-slate-50 last:border-0 px-2 rounded-lg ${highlight === 'Critical' ? 'bg-red-50' : highlight === 'Warning' ? 'bg-amber-50' : ''}`}>
-      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">{label}</span>
-      <span className={`text-sm font-bold ${highlight === 'Critical' ? 'text-red-600' : highlight === 'Warning' ? 'text-amber-600' : 'text-slate-800'}`}>{value || '—'}</span>
+      <div className="p-4 bg-slate-50 border-t border-slate-100 text-center">
+        <button onClick={() => setViewingProfileId(person.id)} className="text-[9px] font-black uppercase text-amber-500 tracking-widest hover:tracking-[0.2em] transition-all">
+          View Complete Record
+        </button>
+      </div>
     </div>
   );
 
-  const StaffCard: React.FC<{ person: Personnel }> = ({ person }) => {
-    const expired = isExpired(person.licenseExpDate);
-    const expiringSoon = isExpiringSoon(person.licenseExpDate);
-
-    return (
-      <div 
-        className={`bg-white rounded-[3rem] p-8 border-2 shadow-sm relative overflow-hidden group hover:shadow-2xl transition-all duration-500 cursor-pointer ${expired ? 'border-red-400' : expiringSoon ? 'border-amber-400' : 'border-slate-100'}`}
-        onClick={() => userRole === 'Admin' && setViewingProfileId(person.id)}
-      >
-        {expired && (
-          <div className="absolute top-4 left-0 right-0 text-center bg-red-500 text-white text-[8px] font-black uppercase py-1 z-20 shadow-md">
-            Credentials Expired
-          </div>
-        )}
-
-        <div className="absolute top-6 right-6 flex space-x-2 z-20">
-          {userRole === 'Admin' && (
-            <button 
-              onClick={(e) => { e.stopPropagation(); setEditingPersonId(person.id); }}
-              className="w-12 h-12 bg-white/80 backdrop-blur shadow-sm rounded-xl flex items-center justify-center text-[8px] font-black hover:bg-[#ffb519] hover:text-white transition-all border border-slate-100"
-            >
-              EDIT
-            </button>
-          )}
-        </div>
-        
-        <div className="relative z-10 space-y-6 pt-2">
-          <div className="flex items-center space-x-4">
-            <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center text-2xl shadow-inner text-white overflow-hidden border-2 border-slate-100">
-              {person.profilePhoto ? (
-                <img src={person.profilePhoto} className="w-full h-full object-cover" alt={person.name} />
-              ) : (
-                <span className="text-3xl grayscale opacity-30">
-                  {person.role.includes('Capitán') ? '⚓' : person.role === PersonnelRole.CEO ? '🏢' : '👤'}
-                </span>
-              )}
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <h4 className="text-lg font-black text-slate-900 leading-tight truncate">{person.name}</h4>
-              <p className="text-[10px] font-bold text-[#ffb519] uppercase tracking-widest truncate">{person.role}</p>
-            </div>
-          </div>
-          
-          <div className="space-y-4 border-y border-slate-50 py-6">
-            <div className="grid grid-cols-2 gap-4">
-               <div className="space-y-1">
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">National ID</p>
-                 <p className="text-xs font-black text-slate-800">{person.idNumber || '—'}</p>
-               </div>
-               <div className="text-right space-y-1">
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Phone Number</p>
-                 <p className="text-xs font-black text-slate-800">{person.phone}</p>
-               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-               <div className="space-y-1">
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">License #</p>
-                 <p className="text-xs font-black text-slate-800">{person.licenseNumber || '—'}</p>
-               </div>
-               <div className={`text-right space-y-1 p-1 rounded-lg ${expired ? 'bg-red-500 text-white' : expiringSoon ? 'bg-amber-100' : ''}`}>
-                 <p className={`text-[9px] font-black uppercase tracking-tighter ${expired ? 'text-white' : 'text-slate-400'}`}>License Exp</p>
-                 <p className={`text-xs font-black ${expired ? 'text-white' : expiringSoon ? 'text-amber-700' : 'text-slate-800'}`}>{person.licenseExpDate || '—'}</p>
-               </div>
-            </div>
-
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
-               <p className="text-[9px] font-black text-[#ffb519] uppercase tracking-widest">SOS / Emergency Contact</p>
-               <div className="flex justify-between items-center">
-                  <span className="text-[11px] font-black text-slate-700">{person.emergencyContactName || 'Base Hub'}</span>
-                  <span className="text-[11px] font-black text-slate-900">{person.emergencyContactPhone || '+507 760 8024'}</span>
-               </div>
-            </div>
-
-            {!person.isActive && (
-               <div className="p-4 bg-red-100/50 rounded-2xl border border-red-200">
-                  <p className="text-[9px] font-black text-red-600 uppercase tracking-widest">Past Employee</p>
-                  <p className="text-xs font-black text-red-800">Reason: {person.inactiveReason || 'Not Specified'}</p>
-               </div>
-            )}
-
-            <div className="p-4 bg-red-50/50 rounded-2xl border border-red-100">
-               <p className="text-[9px] font-black text-red-600 uppercase tracking-tighter">Medical Alerts / Allergies</p>
-               <p className="text-xs font-bold text-red-800 truncate">{person.allergies || 'NONE DECLARED'}</p>
-            </div>
-          </div>
-
-          {userRole === 'Admin' && (
-            <div className="text-center pt-2">
-              <span className="text-[10px] font-black uppercase text-[#ffb519] tracking-[0.2em] animate-pulse">
-                View Admin Dossier →
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  if (editingPerson) {
-    return (
-      <div className="animate-in fade-in duration-300">
-        <AddPersonnelForm 
-          initialData={editingPerson} 
-          onAddPersonnel={(p) => {
-            onUpdatePersonnel(p);
-            setEditingPersonId(null);
-          }}
-          onCancel={() => setEditingPersonId(null)}
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-12 pb-20 relative">
+    <div className="space-y-12">
       <header className="flex justify-between items-center">
         <div>
           <h2 className="text-4xl font-black tracking-tight" style={{ color: PANGEA_DARK }}>Staff Hub</h2>
           <p className="text-slate-400 font-medium">Official credential and emergency database.</p>
         </div>
         <div className="flex items-center space-x-4">
+          <button 
+            onClick={() => setShowPastEmployees(!showPastEmployees)}
+            className={`px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${showPastEmployees ? 'bg-slate-800 text-white shadow-xl' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+          >
+            {showPastEmployees ? 'Viewing Archives' : 'View Inactive Staff'}
+          </button>
           {userRole === 'Admin' && onSyncAll && (
-            <button 
-              onClick={onSyncAll}
-              className="bg-slate-800 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-black transition-all flex items-center space-x-2 group"
-            >
-              <span className="text-lg group-hover:scale-110 transition-transform">☁️</span>
-              <span>Push All to Cloud</span>
+            <button onClick={onSyncAll} className="bg-[#ffb519] text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black shadow-xl">
+              ☁️ Sync All Staff
             </button>
           )}
-          <div className="bg-white px-8 py-4 rounded-[2rem] shadow-sm border border-slate-100 flex items-center space-x-4">
-            <div className="text-right">
-              <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest block">Total Crew</span>
-              <span className="text-2xl font-black" style={{ color: PANGEA_YELLOW }}>{activeStaff.length}</span>
-            </div>
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white text-xl" style={{ backgroundColor: PANGEA_YELLOW }}>👤</div>
-          </div>
         </div>
       </header>
 
-      {Object.entries(activeGrouped).map(([role, staff]) => ( staff.length > 0 && (
-        <section key={role} className="space-y-6">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] ml-2 flex items-center space-x-3">
-             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PANGEA_YELLOW }}></span>
-             <span>{role}</span>
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {staff.map(person => <StaffCard key={person.id} person={person} />)}
-          </div>
-        </section>
-      )))}
-
-      {/* Past Employees Section */}
-      {inactiveStaff.length > 0 && (
-        <section className="pt-10 border-t border-slate-100">
-          <button 
-            onClick={() => setShowPastEmployees(!showPastEmployees)}
-            className="w-full flex items-center justify-between bg-slate-50 p-6 rounded-[2rem] border border-slate-200 hover:bg-slate-100 transition-all"
-          >
-             <div className="flex items-center space-x-4">
-                <span className="text-2xl">📁</span>
-                <div className="text-left">
-                  <h3 className="text-lg font-black text-slate-600">Past Employees Archive</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{inactiveStaff.length} Records Stored</p>
-                </div>
-             </div>
-             <span className={`text-xl transition-transform ${showPastEmployees ? 'rotate-180' : ''}`}>▼</span>
-          </button>
-
-          {showPastEmployees && (
-            <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in slide-in-from-top-4 duration-500">
-               {inactiveStaff.map(person => <StaffCard key={person.id} person={person} />)}
+      {!showPastEmployees ? (
+        ROLE_ORDER.map(role => {
+          const staff = activeStaff.filter(p => 
+            String(p.role || '').toLowerCase().trim() === String(role).toLowerCase().trim()
+          );
+          if (!staff.length) return null;
+          return (
+            <section key={role} className="space-y-6">
+              <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.3em] bg-slate-100 px-4 py-2 rounded-xl inline-block">{role}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {staff.map(person => <StaffCard key={person.id} person={person} />)}
+              </div>
+            </section>
+          );
+        })
+      ) : (
+        <section className="space-y-6 animate-in fade-in duration-500">
+          <h3 className="text-[10px] font-black text-red-600 uppercase tracking-[0.3em] bg-red-50 px-4 py-2 rounded-xl inline-block">Archived Personnel</h3>
+          {inactiveStaff.length === 0 ? (
+            <div className="py-20 text-center bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-200">
+               <p className="font-black text-slate-400 uppercase tracking-widest">No Inactive Staff Found</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {inactiveStaff.map(person => <StaffCard key={person.id} person={person} />)}
             </div>
           )}
         </section>
       )}
 
-      {/* Full Profile Modal (Admin Only) */}
-      {viewingProfile && userRole === 'Admin' && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#434343]/80 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="w-full max-w-4xl bg-white rounded-[3rem] shadow-2xl overflow-hidden flex flex-col h-[90vh]">
-            {/* Modal Header */}
-            <div className="bg-slate-800 p-8 flex justify-between items-center text-white">
-              <div className="flex items-center space-x-6">
-                 <div className="w-24 h-24 rounded-[1.5rem] bg-white/10 flex items-center justify-center overflow-hidden border border-white/20">
-                    {viewingProfile.profilePhoto ? (
-                      <img src={viewingProfile.profilePhoto} className="w-full h-full object-cover" alt={viewingProfile.name} />
-                    ) : (
-                      <span className="text-4xl grayscale opacity-30">👤</span>
-                    )}
-                 </div>
-                 <div>
-                    <h2 className="text-3xl font-black">{viewingProfile.name}</h2>
-                    <p className="text-[#ffb519] font-black text-[10px] uppercase tracking-[0.3em]">{viewingProfile.role}</p>
-                 </div>
+      {editingPerson && (
+        <div className="fixed inset-0 z-[100] bg-[#434343]/90 backdrop-blur-md flex items-start justify-center p-6 overflow-y-auto">
+          <div className="w-full max-w-6xl py-10">
+            <AddPersonnelForm 
+              initialData={editingPerson} 
+              onAddPersonnel={async (p) => { 
+                const ok = await onUpdatePersonnel(p); 
+                if (ok) setEditingPersonId(null); 
+              }}
+              onCancel={() => setEditingPersonId(null)} 
+            />
+          </div>
+        </div>
+      )}
+
+      {viewingProfile && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setViewingProfileId(null)}>
+          <div className="bg-white w-full max-w-2xl rounded-[3rem] p-10 overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start mb-8">
+              <h2 className="text-3xl font-black">{viewingProfile.name}</h2>
+              <button onClick={() => setViewingProfileId(null)} className="text-slate-400 text-2xl">✕</button>
+            </div>
+            <div className="grid grid-cols-2 gap-8 text-sm">
+              <div className="space-y-4">
+                <p className="font-black text-amber-500 uppercase text-[10px]">Employment</p>
+                <div className="bg-slate-50 p-4 rounded-2xl space-y-2">
+                  <p><strong>Role:</strong> {viewingProfile.role}</p>
+                  <p><strong>Started:</strong> {viewingProfile.startDate}</p>
+                  <p><strong>ID Number:</strong> {viewingProfile.idNumber}</p>
+                  <p><strong>Status:</strong> {viewingProfile.isActive ? 'Active' : `Inactive (${viewingProfile.inactiveReason})`}</p>
+                </div>
               </div>
-              <button 
-                onClick={() => setViewingProfileId(null)}
-                className="w-12 h-12 rounded-2xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all font-black"
-              >
-                ✕
+              <div className="space-y-4">
+                <p className="font-black text-amber-500 uppercase text-[10px]">Emergency</p>
+                <div className="bg-red-50 p-4 rounded-2xl space-y-2">
+                  <p><strong>Contact:</strong> {viewingProfile.emergencyContactName}</p>
+                  <p><strong>Phone:</strong> {viewingProfile.emergencyContactPhone}</p>
+                  <p className="text-red-600"><strong>Allergies:</strong> {viewingProfile.allergies || 'None'}</p>
+                </div>
+              </div>
+            </div>
+            {userRole === 'Admin' && (
+              <button onClick={() => { if(confirm("Permanently delete this record?")) onDeletePersonnel(viewingProfile.id, viewingProfile.airtableRecordId); setViewingProfileId(null); }} className="mt-10 w-full py-4 bg-red-100 text-red-600 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-red-600 hover:text-white transition-all">
+                Terminate Employee Profile
               </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-12 custom-scrollbar space-y-12 bg-white">
-               {!viewingProfile.isActive && (
-                 <div className="bg-red-50 p-8 rounded-[2rem] border border-red-100 flex items-center space-x-6">
-                    <span className="text-4xl">🛑</span>
-                    <div>
-                       <h4 className="text-xl font-black text-red-700 uppercase tracking-tighter">Inactive Employee Profile</h4>
-                       <p className="text-sm font-bold text-red-600">Reason: {viewingProfile.inactiveReason} • Inactive since: {viewingProfile.inactiveDate || 'N/A'}</p>
-                    </div>
-                 </div>
-               )}
-
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                  <div className="space-y-10">
-                    <section>
-                      <h4 className="text-xs font-black uppercase text-[#ffb519] mb-4 border-b border-slate-100 pb-2">Identification</h4>
-                      <ProfileDetailRow label="ID Number" value={viewingProfile.idNumber} />
-                      <ProfileDetailRow label="Passport" value={viewingProfile.passportNumber} />
-                      <ProfileDetailRow label="Phone" value={viewingProfile.phone} />
-                      <ProfileDetailRow label="Email" value={viewingProfile.email} />
-                      <ProfileDetailRow label="Blood Type" value={viewingProfile.bloodType} />
-                    </section>
-
-                    <section>
-                      <h4 className="text-xs font-black uppercase text-[#ffb519] mb-4 border-b border-slate-100 pb-2">Banking & Salary</h4>
-                      <ProfileDetailRow label="Monthly Salary" value={viewingProfile.salary ? `$${viewingProfile.salary}` : undefined} />
-                      <ProfileDetailRow label="Bank Name" value={viewingProfile.bankName} />
-                      <ProfileDetailRow label="Account #" value={viewingProfile.bankAccountNum} />
-                      <ProfileDetailRow label="Account Type" value={viewingProfile.bankAccountType} />
-                      <ProfileDetailRow label="Start Date" value={viewingProfile.startDate} />
-                    </section>
-                  </div>
-
-                  <div className="space-y-10">
-                    <section>
-                      <h4 className="text-xs font-black uppercase text-[#ffb519] mb-4 border-b border-slate-100 pb-2">License & Credentials</h4>
-                      <ProfileDetailRow label="License #" value={viewingProfile.licenseNumber} />
-                      <ProfileDetailRow 
-                        label="Exp Date" 
-                        value={viewingProfile.licenseExpDate} 
-                        highlight={isExpired(viewingProfile.licenseExpDate) ? 'Critical' : isExpiringSoon(viewingProfile.licenseExpDate) ? 'Warning' : undefined}
-                      />
-                      {viewingProfile.licensePhoto && (
-                        <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Attached Asset</p>
-                          <img src={viewingProfile.licensePhoto} className="w-full h-48 object-contain bg-white rounded-xl shadow-sm" alt="License Asset" />
-                        </div>
-                      )}
-                    </section>
-
-                    <section>
-                      <h4 className="text-xs font-black uppercase text-[#ffb519] mb-4 border-b border-slate-100 pb-2">Logistics</h4>
-                      <div className="grid grid-cols-3 gap-2 mb-6">
-                        <div className="text-center p-3 bg-slate-50 rounded-xl">
-                          <p className="text-[8px] font-black uppercase text-slate-400">Shirt</p>
-                          <p className="font-black">{viewingProfile.shirtSize || '—'}</p>
-                        </div>
-                        <div className="text-center p-3 bg-slate-50 rounded-xl">
-                          <p className="text-[8px] font-black uppercase text-slate-400">Pants</p>
-                          <p className="font-black">{viewingProfile.pantsSize || '—'}</p>
-                        </div>
-                        <div className="text-center p-3 bg-slate-50 rounded-xl">
-                          <p className="text-[8px] font-black uppercase text-slate-400">Shoes</p>
-                          <p className="font-black">{viewingProfile.shoeSize || '—'}</p>
-                        </div>
-                      </div>
-                      <ProfileDetailRow label="Dependent 1" value={viewingProfile.dependent1Name} />
-                      <ProfileDetailRow label="Relation 1" value={viewingProfile.dependent1Relation} />
-                      <ProfileDetailRow label="Dependent 2" value={viewingProfile.dependent2Name} />
-                    </section>
-                  </div>
-               </div>
-
-               <div className="bg-slate-50 rounded-[2.5rem] p-10 space-y-8 border border-slate-100">
-                  <h4 className="text-lg font-black text-slate-800 flex items-center space-x-2">
-                    <span>📑</span> <span>Vault Attachments</span>
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                     {[
-                       { id: 'docIdPhoto', label: 'ID Picture' },
-                       { id: 'cvDoc', label: 'Curriculum Vitae' },
-                       { id: 'policeRecordDoc', label: 'Police Record' },
-                       { id: 'contractDoc', label: 'Signed Contract' },
-                       { id: 'docConfidentiality', label: 'Confidentiality Agreement' },
-                       { id: 'docImageRightsFile', label: 'Image Usage Rights' }
-                     ].map(doc => (
-                       <div key={doc.id} className="bg-white p-6 rounded-2xl border border-slate-200 flex flex-col justify-between space-y-4 shadow-sm hover:shadow-md transition-all">
-                          <div>
-                            <p className="text-[10px] font-black uppercase text-slate-400">{doc.label}</p>
-                            <p className="text-xs font-bold mt-1">{(viewingProfile as any)[doc.id] ? 'Asset Available' : 'Missing'}</p>
-                          </div>
-                          {(viewingProfile as any)[doc.id] && (
-                            <a 
-                              href={(viewingProfile as any)[doc.id]} 
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="w-full py-3 bg-[#434343] text-white rounded-xl text-[10px] font-black uppercase tracking-widest text-center hover:bg-black transition-all"
-                            >
-                              {(viewingProfile as any)[doc.id].startsWith('http') ? 'View on Drive' : 'Download Asset'}
-                            </a>
-                          )}
-                       </div>
-                     ))}
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-4 border-t border-slate-200">
-                    {[
-                      { key: 'docPoliceRecords', label: 'Police Clearance' },
-                      { key: 'docZeroAlcohol', label: 'Alcohol Protocol' },
-                      { key: 'docConfidentialAgreement', label: 'NDA/Confidentiality' },
-                      { key: 'docImageRights', label: 'Media Rights' },
-                      { key: 'docContract', label: 'HR Contract' },
-                      { key: 'docAddendum', label: 'Legal Addendum' }
-                    ].map(chk => (
-                      <div key={chk.key} className="flex items-center space-x-3 bg-white px-4 py-3 rounded-xl border border-slate-100">
-                        <span className="text-lg">{(viewingProfile as any)[chk.key] ? '✅' : '❌'}</span>
-                        <span className="text-[10px] font-black uppercase text-slate-600">{chk.label}</span>
-                      </div>
-                    ))}
-                  </div>
-               </div>
-            </div>
-
-            <div className="p-8 bg-slate-50 border-t border-slate-200 flex justify-end items-center space-x-6">
-               <div className="text-right">
-                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sensitive Data Policy</p>
-                 <p className="text-[10px] font-bold text-slate-500">Only authorized Admins can access this dossier.</p>
-               </div>
-               <button 
-                onClick={() => setViewingProfileId(null)}
-                className="bg-[#434343] text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-xl"
-               >
-                 Close Dossier
-               </button>
-            </div>
+            )}
           </div>
         </div>
       )}

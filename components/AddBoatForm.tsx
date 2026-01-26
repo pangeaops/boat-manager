@@ -10,7 +10,7 @@ interface AddBoatFormProps {
 
 const AddBoatForm: React.FC<AddBoatFormProps> = ({ onAddBoat, initialData, onCancel }) => {
   const [formData, setFormData] = useState<Partial<Boat>>(initialData || {
-    name: '',
+    boatname: '',
     model: '',
     year: new Date().getFullYear(),
     length: '',
@@ -30,7 +30,7 @@ const AddBoatForm: React.FC<AddBoatFormProps> = ({ onAddBoat, initialData, onCan
 
   // Sync serial numbers array with number of engines
   useEffect(() => {
-    const current = formData.engineSerialNumbers || [];
+    const current = Array.isArray(formData.engineSerialNumbers) ? formData.engineSerialNumbers : [];
     const target = formData.numberOfEngines || 1;
     if (current.length !== target) {
       const updated = [...current];
@@ -48,16 +48,18 @@ const AddBoatForm: React.FC<AddBoatFormProps> = ({ onAddBoat, initialData, onCan
     const finalId = initialData?.id || formData.id || Math.random().toString(36).substr(2, 9);
     onAddBoat({
       ...formData as Boat,
-      id: finalId,
-      mandatoryChecklist: initialData?.mandatoryChecklist || MANDATORY_ITEMS
+      id: finalId
     });
   };
 
   const handleSerialChange = (index: number, val: string) => {
-    const updated = [...(formData.engineSerialNumbers || [])];
+    const current = Array.isArray(formData.engineSerialNumbers) ? formData.engineSerialNumbers : [];
+    const updated = [...current];
     updated[index] = val;
     setFormData({ ...formData, engineSerialNumbers: updated });
   };
+
+  const serialNumbers = Array.isArray(formData.engineSerialNumbers) ? formData.engineSerialNumbers : [];
 
   return (
     <div className="bg-white rounded-[2.5rem] shadow-2xl p-12 border border-slate-100 max-w-4xl mx-auto">
@@ -72,11 +74,37 @@ const AddBoatForm: React.FC<AddBoatFormProps> = ({ onAddBoat, initialData, onCan
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase text-slate-400">Boat Name</label>
-              <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold shadow-inner" placeholder="e.g. Nana del Mar" required />
+              <input type="text" value={formData.boatname} onChange={e => setFormData({...formData, boatname: e.target.value})} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold shadow-inner" placeholder="e.g. Nana del Mar" required />
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase text-slate-400">Hull Identification (HIN)</label>
               <input type="text" value={formData.serialNumber} onChange={e => setFormData({...formData, serialNumber: e.target.value})} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold shadow-inner" placeholder="PANGEA-HULL-XXX" required />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-slate-400">Model / Manufacturer</label>
+              <input type="text" value={formData.model} onChange={e => setFormData({...formData, model: e.target.value})} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold shadow-inner" placeholder="Yate / Motomarlin S.A.S" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-slate-400">Year Built</label>
+              <input type="number" value={formData.year} onChange={e => setFormData({...formData, year: parseInt(e.target.value) || 0})} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold shadow-inner" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-slate-400">Length (ft)</label>
+              <input type="text" value={formData.length} onChange={e => setFormData({...formData, length: e.target.value})} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold shadow-inner" placeholder="e.g. 46" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-slate-400">Beam (m)</label>
+              <input type="text" value={formData.beam} onChange={e => setFormData({...formData, beam: e.target.value})} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold shadow-inner" placeholder="e.g. 4" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-slate-400">Draft (ft)</label>
+              <input type="text" value={formData.draft} onChange={e => setFormData({...formData, draft: e.target.value})} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold shadow-inner" placeholder="e.g. 3.5" />
             </div>
           </div>
 
@@ -104,7 +132,7 @@ const AddBoatForm: React.FC<AddBoatFormProps> = ({ onAddBoat, initialData, onCan
             <div className="space-y-4">
                <label className="text-[10px] font-black text-slate-400 uppercase">Engine Bin / Serial Numbers</label>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 {formData.engineSerialNumbers?.map((sn, i) => (
+                 {serialNumbers.map((sn, i) => (
                    <div key={i} className="flex items-center space-x-3 bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
                      <span className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center font-black text-xs">#{i+1}</span>
                      <input 

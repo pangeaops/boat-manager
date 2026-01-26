@@ -31,15 +31,16 @@ const Layout: React.FC<LayoutProps> = ({
   const staffAlerts = complianceAlerts.filter(a => a.type === 'Staff').length;
   const tourAlerts = complianceAlerts.filter(a => a.type === 'Tour').length;
   const taskAlerts = complianceAlerts.filter(a => a.type === 'Task' && a.severity === 'Critical').length;
+  const inventoryAlerts = data.inventory.filter(i => i.currentStock <= i.minStock).length;
 
   const allNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊', minRole: 'Staff' },
     { id: 'admin_dashboard', label: 'Admin Analytics', icon: '📈', minRole: 'Admin' },
     { id: 'fleet', label: 'Fleet Hub', icon: '🛥️', minRole: 'Staff', badge: boatAlerts },
     { id: 'tours', label: 'Daily Tours', icon: '📅', minRole: 'Staff', badge: tourAlerts },
-    { id: 'inventory', label: 'Inventory Hub', icon: '📦', minRole: 'Staff' },
     { id: 'personnel_hub', label: 'Staff Hub', icon: '👤', minRole: 'Staff', badge: staffAlerts },
     { id: 'maintenance', label: 'Maintenance', icon: '🔧', minRole: 'Staff', badge: taskAlerts },
+    { id: 'inventory', label: 'Inventory', icon: '📦', minRole: 'Staff', badge: inventoryAlerts },
     { id: 'protocols', label: 'Safety & Eco', icon: '🛡️', minRole: 'Staff' },
     { id: 'logs', label: 'Ops Log', icon: '📜', minRole: 'Staff' },
     { id: 'add_forms', label: 'Admin Console', icon: '🛠️', minRole: 'Admin' },
@@ -105,6 +106,14 @@ const Layout: React.FC<LayoutProps> = ({
                 </span>
              </div>
            )}
+
+           {/* Low Stock Badge */}
+           {inventoryAlerts > 0 && (
+             <div className="bg-amber-100 border border-amber-200 p-2 rounded-xl flex items-center space-x-3">
+                <span className="text-xs">📦</span>
+                <span className="text-[8px] font-black uppercase text-amber-700 tracking-widest">Restock Needed</span>
+             </div>
+           )}
         </div>
         
         <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
@@ -123,7 +132,7 @@ const Layout: React.FC<LayoutProps> = ({
               
               {/* Notification Badges */}
               {(item.badge && item.badge > 0) ? (
-                <div className={`absolute right-4 flex items-center justify-center min-w-[20px] h-5 px-1 ${item.id === 'tours' || item.id === 'maintenance' ? 'bg-red-600' : 'bg-red-500'} rounded-full text-[9px] text-white font-black animate-pulse`}>
+                <div className={`absolute right-4 flex items-center justify-center min-w-[20px] h-5 px-1 ${item.id === 'tours' || item.id === 'maintenance' || item.id === 'inventory' ? 'bg-red-600' : 'bg-red-500'} rounded-full text-[9px] text-white font-black animate-pulse`}>
                   {item.badge}
                 </div>
               ) : (
