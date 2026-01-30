@@ -20,6 +20,11 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
   
   const complianceAlerts = useMemo(() => checkCompliance(data), [data]);
 
+  // Filter for currently dispatched tours
+  const activeMissions = useMemo(() => 
+    (data.tours || []).filter(t => t.status?.toLowerCase() === 'dispatched')
+  , [data.tours]);
+
   const getStatusIcon = (status: BoatStatus) => {
     switch (status) {
       case 'Available': return '🛥️';
@@ -124,6 +129,63 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
           <div className="text-4xl font-black mt-1">{data.boats.filter(b => b.status === 'Available').length}</div>
         </div>
       </div>
+
+      {/* On-Going Missions Section */}
+      {activeMissions.length > 0 && (
+        <section className="space-y-6">
+          <h3 className="text-xs font-black uppercase text-indigo-600 tracking-[0.3em] flex items-center gap-2">
+            <span className="animate-pulse">🌊</span> Current Missions
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {activeMissions.map((tour) => {
+              const boat = data.boats.find(b => b.id === tour.boatId || b.airtableRecordId === tour.boatId);
+              const captain = data.personnel.find(p => p.id === tour.captainId || p.airtableRecordId === tour.captainId);
+              const matesNames = (tour.mates || [])
+                .map(mId => data.personnel.find(p => p.id === mId || p.airtableRecordId === mId)?.name)
+                .filter(Boolean);
+
+              return (
+                <div key={tour.id} className="bg-white p-6 rounded-[2.5rem] border-2 border-indigo-100 shadow-md relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 bg-indigo-600 text-white px-6 py-1 font-black text-[8px] uppercase tracking-widest">
+                    Live
+                  </div>
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-xl shadow-inner">
+                      🛥️
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-900 leading-none">{boat?.boatname || 'Unidentified Vessel'}</h4>
+                      <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-1">{tour.route}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between border-b border-slate-50 pb-2">
+                      <span className="text-[9px] font-black text-slate-400 uppercase">Captain</span>
+                      <span className="text-[11px] font-black text-slate-800">{captain?.name || 'Pending...'}</span>
+                    </div>
+                    {matesNames.length > 0 && (
+                      <div className="flex justify-between border-b border-slate-50 pb-2">
+                        <span className="text-[9px] font-black text-slate-400 uppercase">Crew</span>
+                        <span className="text-[11px] font-bold text-slate-700 text-right truncate ml-4">{matesNames.join(', ')}</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-slate-50 p-3 rounded-2xl">
+                        <span className="text-[8px] font-black text-slate-400 uppercase block">Guests</span>
+                        <span className="text-xl font-black text-slate-900">{tour.paxCount} PAX</span>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-2xl">
+                        <span className="text-[8px] font-black text-slate-400 uppercase block">Left Base</span>
+                        <span className="text-xl font-black text-slate-900">{tour.departureTime}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Fleet Real-Time Status Cards */}
       <section className="space-y-6">
