@@ -36,7 +36,7 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
   const getStatusColorClass = (status: BoatStatus) => {
     switch (status) {
       case 'Available': return 'bg-green-500';
-      case 'In Tour': return 'bg-indigo-500';
+      case 'In Tour': return 'bg-indigo-600';
       case 'In Maintenance': return 'bg-amber-500';
       case 'In Repairs': return 'bg-red-500';
       case 'Cleanup': return 'bg-blue-500';
@@ -45,13 +45,12 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
     }
   };
 
-  // ENGINE HOURS MAINTENANCE ALERT (50HR THRESHOLD)
   const engineHourAlerts = useMemo(() => {
     return data.boats.map(boat => {
       const lastService = boat.lastServiceDate ? new Date(boat.lastServiceDate) : new Date(0);
       const toursSinceService = data.tours.filter(t => 
-        t.boatId === boat.id && 
-        t.status === 'Completed' && 
+        (t.boatId === boat.id || t.boatId === boat.airtableRecordId) && 
+        t.status?.toLowerCase() === 'completed' && 
         new Date(t.date) >= lastService
       );
       
@@ -72,7 +71,7 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
   }, [data.boats, data.tours]);
 
   const fleetEfficiency = useMemo(() => {
-    const completed = data.tours.filter(t => t.status === 'Completed');
+    const completed = data.tours.filter(t => t.status?.toLowerCase() === 'completed');
     const totalGasLost = completed.reduce((sum, t) => sum + (t.startGas - (t.endGas || 0)), 0);
     const totalHours = completed.reduce((sum, t) => {
       const hmi = (t.hmiEnd || 0) - (t.hmiStart || 0);
@@ -133,7 +132,14 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {data.boats.map((boat) => {
-            const boatTasks = activeTasks.filter(t => t.boatId === boat.id);
+            const boatTasks = activeTasks.filter(t => (t.boatId === boat.id || t.boatId === boat.airtableRecordId));
+            // Search for active tour - robust case-insensitive check and ID matching
+            const activeTour = data.tours.find(t => 
+              (t.boatId === boat.id || t.boatId === boat.airtableRecordId) && 
+              (t.status?.toLowerCase() === 'dispatched' || t.status?.toLowerCase() === 'in tour')
+            );
+            const captainName = activeTour ? data.personnel.find(p => p.id === activeTour.captainId || p.airtableRecordId === activeTour.captainId)?.name : null;
+            
             const hasMaintenance = boatTasks.length > 0;
             const statusIcon = getStatusIcon(boat.status);
             
@@ -145,15 +151,29 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
                 {/* Visual Icon */}
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-inner ${
                   boat.status === 'Available' ? 'bg-green-50' : 
+                  (boat.status === 'In Tour' || activeTour) ? 'bg-indigo-600 text-white animate-pulse shadow-indigo-200' :
                   boat.status === 'In Maintenance' || boat.status === 'In Repairs' ? 'bg-amber-50' : 
                   'bg-slate-50'
                 }`}>
                   {statusIcon}
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1 w-full overflow-hidden">
                   <p className="text-[11px] font-black text-slate-800 leading-tight truncate w-full px-1">{boat.boatname}</p>
-                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{boat.status}</p>
+                  
+                  {(boat.status === 'In Tour' || activeTour) ? (
+                    <div className="space-y-1">
+                      <p className="text-[7px] font-black text-indigo-600 uppercase tracking-tighter truncate px-2 bg-indigo-50 py-0.5 rounded-full inline-block border border-indigo-100">
+                        {activeTour?.route || 'In Tour'}
+                      </p>
+                      <div className="flex flex-col items-center opacity-80">
+                         <span className="text-[8px] font-bold text-slate-500 truncate max-w-[80px]">👨‍✈️ {captainName || 'Active Crew'}</span>
+                         <span className="text-[8px] font-black text-slate-400">{activeTour?.paxCount || '--'} PAX</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{boat.status}</p>
+                  )}
                 </div>
 
                 {/* Maintenance Alert Badge */}
@@ -211,7 +231,7 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
                 {tasksCompletedToday.map(task => (
                   <div key={task.id} className="bg-white p-4 rounded-2xl border border-green-100 flex justify-between items-center">
                     <div>
-                      <p className="text-[9px] font-black uppercase text-slate-400">{data.boats.find(b => b.id === task.boatId)?.boatname || 'Vessel'}</p>
+                      <p className="text-[9px] font-black uppercase text-slate-400">{data.boats.find(b => b.id === task.boatId || b.airtableRecordId === task.boatId)?.boatname || 'Vessel'}</p>
                       <p className="font-black text-sm text-slate-800">{task.taskType}</p>
                     </div>
                     <span className="text-green-500 font-bold text-xs">DONE</span>

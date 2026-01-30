@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { AppData, Boat, Task, BoatStatus, UserRole } from '../types';
 import { PANGEA_DARK, BOAT_STATUS_OPTIONS } from '../constants';
@@ -86,6 +85,7 @@ const BoatDashboard: React.FC<BoatDashboardProps> = ({ data, userRole, onUpdateT
         {sortedBoats.map((boat) => {
           const tasks = getPendingTasks(boat.id);
           const hasActiveTasks = tasks.length > 0;
+          const isInTour = boat.status === 'In Tour';
           const expired = isExpired(boat.licenseExpDate);
           const expiringSoon = isExpiringSoon(boat.licenseExpDate);
           
@@ -110,8 +110,9 @@ const BoatDashboard: React.FC<BoatDashboardProps> = ({ data, userRole, onUpdateT
                         <div className="relative group/sel">
                           <select 
                             value={boat.status} 
+                            disabled={isInTour}
                             onChange={(e) => onUpdateBoatStatus(boat.id, e.target.value as BoatStatus)}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase outline-none shadow-sm transition-all border-none cursor-pointer ${getStatusColor(boat.status)}`}
+                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase outline-none shadow-sm transition-all border-none cursor-pointer ${getStatusColor(boat.status)} ${isInTour ? 'opacity-90 cursor-not-allowed ring-2 ring-indigo-200' : ''}`}
                           >
                             {BOAT_STATUS_OPTIONS.map(opt => (
                               <option 
@@ -121,10 +122,15 @@ const BoatDashboard: React.FC<BoatDashboardProps> = ({ data, userRole, onUpdateT
                                 className="bg-white text-slate-800"
                               >
                                 {opt} {opt === 'Available' && hasActiveTasks ? '(Locked: Task Active)' : ''}
+                                {opt === 'In Tour' && isInTour ? '(Active Tour)' : ''}
                               </option>
                             ))}
                           </select>
-                          {hasActiveTasks && (
+                          {isInTour ? (
+                            <div className="absolute -bottom-6 right-0 opacity-0 group-hover/sel:opacity-100 transition-opacity whitespace-nowrap text-[8px] font-bold text-indigo-500 uppercase tracking-tighter bg-indigo-50 px-2 py-1 rounded shadow-sm border border-indigo-100">
+                              Locked: Complete arrival log to unlock status
+                            </div>
+                          ) : hasActiveTasks && (
                             <div className="absolute -bottom-6 right-0 opacity-0 group-hover/sel:opacity-100 transition-opacity whitespace-nowrap text-[8px] font-bold text-red-500 uppercase tracking-tighter bg-red-50 px-2 py-1 rounded shadow-sm border border-red-100">
                               Active maintenance blocks "Available" status
                             </div>
