@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AppData, Priority, Boat, Tour, Task } from '../types';
+import { AppData, Priority, Boat, Tour, Task, BoatStatus } from '../types';
 import { getFleetInsights } from '../services/geminiService';
 import { checkCompliance } from '../services/complianceService';
 
@@ -20,6 +20,31 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
   
   const complianceAlerts = useMemo(() => checkCompliance(data), [data]);
 
+  const getStatusIcon = (status: BoatStatus) => {
+    switch (status) {
+      case 'Available': return '🛥️';
+      case 'In Tour': return '🌊';
+      case 'In Maintenance': return '🔧';
+      case 'In Repairs': return '🛠️';
+      case 'Cleanup': return '🧽';
+      case 'Stand By': return '⚓';
+      case 'Not Available': return '🚫';
+      default: return '🚤';
+    }
+  };
+
+  const getStatusColorClass = (status: BoatStatus) => {
+    switch (status) {
+      case 'Available': return 'bg-green-500';
+      case 'In Tour': return 'bg-indigo-500';
+      case 'In Maintenance': return 'bg-amber-500';
+      case 'In Repairs': return 'bg-red-500';
+      case 'Cleanup': return 'bg-blue-500';
+      case 'Stand By': return 'bg-slate-400';
+      default: return 'bg-slate-200';
+    }
+  };
+
   // ENGINE HOURS MAINTENANCE ALERT (50HR THRESHOLD)
   const engineHourAlerts = useMemo(() => {
     return data.boats.map(boat => {
@@ -34,7 +59,6 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
         const hmiDelta = (t.hmiEnd || 0) - (t.hmiStart || 0);
         const hmdDelta = (t.hmdEnd || 0) - (t.hmdStart || 0);
         const hmcDelta = (t.hmcEnd || 0) - (t.hmcStart || 0);
-        // We track the highest usage engine as the primary service driver
         return sum + Math.max(hmiDelta, hmdDelta, hmcDelta);
       }, 0);
 
@@ -47,7 +71,6 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
     }).filter(a => a.isWarning);
   }, [data.boats, data.tours]);
 
-  // FLEET EFFICIENCY LOGIC
   const fleetEfficiency = useMemo(() => {
     const completed = data.tours.filter(t => t.status === 'Completed');
     const totalGasLost = completed.reduce((sum, t) => sum + (t.startGas - (t.endGas || 0)), 0);
@@ -98,10 +121,52 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
           <div className="text-4xl font-black text-green-600 mt-1">{tasksCompletedToday.length}</div>
         </div>
         <div className="bg-[#ffb519] p-8 rounded-3xl shadow-lg text-white">
-          <div className="text-[10px] font-black text-white/70 uppercase tracking-widest">Active Fleet</div>
+          <div className="text-[10px] font-black text-white/70 uppercase tracking-widest">Available Fleet</div>
           <div className="text-4xl font-black mt-1">{data.boats.filter(b => b.status === 'Available').length}</div>
         </div>
       </div>
+
+      {/* Fleet Real-Time Status Cards */}
+      <section className="space-y-6">
+        <h3 className="text-xs font-black uppercase text-slate-400 tracking-[0.3em] flex items-center gap-2">
+          <span>🚩</span> Live Fleet Status
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          {data.boats.map((boat) => {
+            const boatTasks = activeTasks.filter(t => t.boatId === boat.id);
+            const hasMaintenance = boatTasks.length > 0;
+            const statusIcon = getStatusIcon(boat.status);
+            
+            return (
+              <div key={boat.id} className="bg-white p-5 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col items-center text-center space-y-3 relative group hover:shadow-md transition-all">
+                {/* Status Indicator Dot */}
+                <div className={`absolute top-4 right-4 w-2 h-2 rounded-full ${getStatusColorClass(boat.status)}`}></div>
+                
+                {/* Visual Icon */}
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-inner ${
+                  boat.status === 'Available' ? 'bg-green-50' : 
+                  boat.status === 'In Maintenance' || boat.status === 'In Repairs' ? 'bg-amber-50' : 
+                  'bg-slate-50'
+                }`}>
+                  {statusIcon}
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-[11px] font-black text-slate-800 leading-tight truncate w-full px-1">{boat.boatname}</p>
+                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{boat.status}</p>
+                </div>
+
+                {/* Maintenance Alert Badge */}
+                {hasMaintenance && (
+                  <div className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-[7px] font-black uppercase flex items-center gap-1 animate-pulse">
+                    <span>🔧</span> {boatTasks.length} {boatTasks.length === 1 ? 'TASK' : 'TASKS'}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       {/* Engine Hour Maintenance Warning */}
       {engineHourAlerts.length > 0 && (

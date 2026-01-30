@@ -15,6 +15,7 @@ const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ data, onAddTask, onSe
     boatId: '',
     taskType: MAINTENANCE_TASKS[0],
     priority: Priority.MEDIUM,
+    status: 'Pending' as Task['status'],
     scheduledDate: new Date().toISOString().split('T')[0],
     dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     personnelIds: [] as string[],
@@ -57,10 +58,10 @@ const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ data, onAddTask, onSe
       dueDate: formData.dueDate,
       personnelInCharge: formData.personnelIds,
       provisionsUsed: formData.provisionsUsed,
-      status: 'Pending',
+      status: formData.status,
       notes: formData.notes
     } as Task);
-    setFormData({ ...formData, boatId: '', personnelIds: [], provisionsUsed: [], notes: '' });
+    setFormData({ ...formData, boatId: '', personnelIds: [], provisionsUsed: [], notes: '', status: 'Pending' });
   };
 
   const handleExportReport = (task: Task) => {
@@ -107,11 +108,21 @@ const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ data, onAddTask, onSe
                       {MAINTENANCE_TASKS.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400">Priority Level</label>
-                    <select value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value as Priority})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-6 py-4 font-black outline-none">
-                      {Object.values(Priority).map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400">Priority</label>
+                      <select value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value as Priority})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-4 font-black outline-none">
+                        {Object.values(Priority).map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-[#ffb519]">Status</label>
+                      <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value as any})} className="w-full bg-amber-50 border border-amber-100 rounded-xl px-4 py-4 font-black outline-none text-amber-700">
+                        <option value="Pending">Pending</option>
+                        <option value="Ongoing">Ongoing</option>
+                        <option value="Completed">Completed</option>
+                      </select>
+                    </div>
                   </div>
                </div>
 

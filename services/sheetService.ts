@@ -21,21 +21,16 @@ export const SHEET_MAP: Record<string, string> = {
 
 const NUMERIC_FIELDS = [
   'year', 'capacity', 'engineHP', 'numberOfEngines', 'salary', 
-  'currentStock', 'minStock', 'paxCount', 'startGas', 'endGas', 
+  'currentStock', 'paxCount', 'startGas', 'endGas', 
   'hmiStart', 'hmiEnd', 'hmdStart', 'hmdEnd', 'hmcStart', 'hmcEnd',
   'observationTime', 'minDistance', 'departureQty', 'arrivalQty', 'quantityUsed',
-  'finalStock', 'TotalReceived', 'Quantity Left', 'Total Quantity Used',
-  'Avg Consumption (Gal/Tour)', 'FinalStock'
+  'TotalReceived', 'Quantity Used'
 ];
 
 const MULTI_VALUE_FIELDS = [
-  'personnelInCharge', 
   'personnellInCharge',
-  'Assignee',
   'mates',
   'supportMates',
-  'Marinero',
-  'Ayudante General',
   'encounters',
   'provisions',
   'ProvisionsTasks',
@@ -45,7 +40,10 @@ const MULTI_VALUE_FIELDS = [
   'supportBoatId',
   'supportCaptainId',
   'tourId',
-  'inventoryId'
+  'inventoryId',
+  'Tour',
+  'Inventory Item',
+  'Assignee'
 ];
 
 const DOC_BOOLEAN_FIELDS = [
@@ -58,63 +56,56 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const serializeForAirtable = (tableName: string, data: any) => {
   const fields: any = {};
   
-  const globalExclusions = [
-    'airtableRecordId', 'Created', 'Last Modified', 'createdTime',
-    'Average Fuel Consumed (Tours)', 'fuelConsumed', 'totalHours', 'efficiency',
-    'Quantity Left', 'quantityLeft', 'Total Quantity Used', 'totalQuantityUsed',
-    'finalStock', 'FinalStock', 'Final Stock', 'Fuel Consumed', 'Total Fuel Consumed'
-  ];
+  // Whitelists derived strictly from documentation screenshots
+  const WHITELISTS: Record<string, string[]> = {
+    'Boats': ['id', 'boatname', 'model', 'year', 'draft', 'beam', 'length', 'engineBrand', 'engineModel', 'numberOfEngines', 'engineHP', 'engineSerialNumbers', 'serialNumber', 'capacity', 'licenseNumber', 'licenseExpDate', 'status'],
+    'Personnel': ['name', 'role', 'phone', 'email', 'idNumber', 'passportNumber', 'allergies', 'isActive', 'inactiveReason', 'inactiveDate', 'bankName', 'bankAccountNum', 'bankAccountType', 'shirtSize', 'pantsSize', 'shoeSize', 'dependent1Name', 'dependent1Relation', 'dependent2Name', 'dependent2Relation', 'startDate', 'salary', 'emergencyContactName', 'emergencyContactPhone', 'licenseNumber', 'licenseExpDate', 'bloodType', 'experience', 'docPoliceRecords', 'docZeroAlcohol', 'docConfidentialAgreement', 'docImageRights', 'docContract', 'docAddendum', 'NATIONAL ID PICTURE', 'CURRICULUM VITAE (CV)', 'POLICE RECORD', 'SIGNED CONTRACT', 'CONFIDENTIALITY AGREEMENT', 'IMAGE USAGE RIGHTS'],
+    'Tours': ['id', 'date', 'departureTime', 'actualTime', 'boatId', 'captainId', 'mates', 'tourType', 'route', 'paxCount', 'startGas', 'endGas', 'hmiStart', 'hmiEnd', 'hmdStart', 'hmdEnd', 'hmcStart', 'hmcEnd', 'provisions', 'generalTripNotes', 'arrivalNotes', 'mechanicalNotes', 'encounters', 'pickupLocation', 'dropoffLocation', 'isSupportBoatRequired', 'supportBoatId', 'supportCaptainId', 'supportMates', 'status'],
+    'Inventory': ['Name', 'Notes', 'Assignee', 'Status', 'category', 'TotalReceived', 'personnellInCharge'],
+    'Tasks': ['id', 'boatId', 'taskName', 'taskType', 'priority', 'scheduledDate', 'dueDate', 'Assignee', 'status', 'Status', 'notes', 'taskdone', 'ProvisionsTasks', 'personnellInCharge'],
+    'TourProvisions': ['Tour', 'Inventory Item', 'Quantity Used', 'Unit', 'Notes'],
+    'AuditLogs': ['id', 'timestamp', 'action', 'details', 'category', 'user']
+  };
 
-  const INVENTORY_WHITELIST = ['category', 'currentStock', 'minStock', 'unit', 'location', 'lastUpdated'];
+  const tableWhitelist = WHITELISTS[tableName] || [];
 
   Object.keys(data).forEach(key => {
-    if (globalExclusions.includes(key)) return;
-    
-    if (tableName === 'Inventory' && !INVENTORY_WHITELIST.includes(key)) return;
-    
-    if (['Personnel', 'Boats', 'Inventory', 'Tasks'].includes(tableName) && (key === 'id' || key === 'name')) return;
-
     let val = data[key];
     if (val === undefined || val === null) return;
 
     let mappedKey = key;
     
-    if (tableName === 'Inventory' && key === 'currentStock') {
-      mappedKey = 'TotalReceived';
+    // Global and Table Specific Mappings
+    if (tableName === 'Inventory') {
+      if (key === 'name') mappedKey = 'Name';
+      if (key === 'currentStock') mappedKey = 'TotalReceived';
+      if (key === 'personnelInCharge') mappedKey = 'personnellInCharge';
     }
 
-    if (tableName === 'Tasks' && key === 'personnelInCharge') {
-      mappedKey = 'Assignee';
+    if (tableName === 'Tasks') {
+      if (key === 'personnelInCharge') mappedKey = 'personnellInCharge';
+      if (key === 'provisionsUsed') mappedKey = 'ProvisionsTasks';
     }
 
-    if (tableName === 'Tours' && key === 'arrivalTime') {
-      mappedKey = 'actualTime';
+    if (tableName === 'TourProvisions') {
+      if (key === 'tourId') mappedKey = 'Tour';
+      if (key === 'inventoryId') mappedKey = 'Inventory Item';
+      if (key === 'quantityUsed') mappedKey = 'Quantity Used';
+      if (key === 'unit') mappedKey = 'Unit';
     }
 
-    if (tableName === 'Tasks' && key === 'provisionsUsed') {
-      mappedKey = 'ProvisionsTasks';
-    }
+    if (tableName === 'Tours' && key === 'arrivalTime') mappedKey = 'actualTime';
 
-    if (key === 'engineSerialNumbers' && tableName === 'Boats') {
-      if (Array.isArray(val)) {
-        fields[mappedKey] = val.filter((s: string) => s && s.trim()).join(', ');
-      } else {
-        fields[mappedKey] = String(val);
-      }
-      return;
-    }
-
-    if (tableName === 'Tasks' && key === 'status') {
-      fields['taskdone'] = (val === 'Completed');
-      return;
-    }
-
+    // HR Doc Mappings
     if (key === 'docIdPhoto') mappedKey = 'NATIONAL ID PICTURE';
     else if (key === 'cvDoc') mappedKey = 'CURRICULUM VITAE (CV)';
     else if (key === 'policeRecordDoc') mappedKey = 'POLICE RECORD';
     else if (key === 'contractDoc') mappedKey = 'SIGNED CONTRACT';
     else if (key === 'docConfidentiality') mappedKey = 'CONFIDENTIALITY AGREEMENT';
     else if (key === 'docImageRightsFile') mappedKey = 'IMAGE USAGE RIGHTS';
+
+    // Check Whitelist
+    if (!tableWhitelist.includes(mappedKey)) return;
 
     if (MULTI_VALUE_FIELDS.includes(mappedKey)) {
       if (!val) { fields[mappedKey] = []; return; }
@@ -162,31 +153,19 @@ const deserializeFromAirtable = (record: any) => {
     data.id = record.id;
   }
   
-  if (fields.TotalReceived !== undefined) {
-    data.currentStock = Number(fields.TotalReceived);
+  if (fields.TotalReceived !== undefined) data.currentStock = Number(fields.TotalReceived);
+  if (fields.category !== undefined) data.category = fields.category;
+  
+  const assigneeVal = fields.personnellInCharge || fields.Assignee || fields.personnelInCharge;
+  if (assigneeVal) {
+    data.personnelInCharge = Array.isArray(assigneeVal) 
+      ? assigneeVal.map((u: any) => typeof u === 'string' ? u : u.id || u.name)
+      : [typeof assigneeVal === 'string' ? assigneeVal : assigneeVal.id || assigneeVal.name];
   }
 
-  if (fields.FinalStock !== undefined) {
-    data.finalStock = Number(fields.FinalStock);
-  } else if (fields['Final Stock'] !== undefined) {
-    data.finalStock = Number(fields['Final Stock']);
-  }
-
-  if (fields.Assignee) {
-    if (Array.isArray(fields.Assignee)) {
-      data.personnelInCharge = fields.Assignee.map((u: any) => typeof u === 'string' ? u : u.name || u.email);
-    } else {
-      data.personnelInCharge = [typeof fields.Assignee === 'string' ? fields.Assignee : fields.Assignee.name || fields.Assignee.email];
-    }
-  }
-
-  if (fields.actualTime) {
-    data.arrivalTime = fields.actualTime;
-  }
-
-  if (fields.ProvisionsTasks) {
-    data.provisionsUsed = fields.ProvisionsTasks;
-  }
+  if (fields.actualTime) data.arrivalTime = fields.actualTime;
+  if (fields.ProvisionsTasks) data.provisionsUsed = fields.ProvisionsTasks;
+  if (fields['Quantity Used']) data.quantityUsed = Number(fields['Quantity Used']);
 
   data.personnelInCharge = data.personnelInCharge || [];
   data.mates = fields.mates || [];
@@ -202,7 +181,10 @@ const deserializeFromAirtable = (record: any) => {
   if (fields['NATIONAL ID PICTURE']) data.docIdPhoto = fields['NATIONAL ID PICTURE'];
   if (fields['CURRICULUM VITAE (CV)']) data.cvDoc = fields['CURRICULUM VITAE (CV)'];
   
-  if (fields.taskdone !== undefined) {
+  const statusValue = fields.status || fields.Status;
+  if (statusValue) {
+    data.status = statusValue;
+  } else if (fields.taskdone !== undefined) {
     data.status = fields.taskdone ? 'Completed' : 'Pending';
   }
 
@@ -225,7 +207,7 @@ export const syncToSheet = async (tableName: string, data: any) => {
       } else if (tableName === 'Boats') {
         filter = `{boatname}="${searchValue}"`;
       } else if (tableName === 'Inventory') {
-        const invSearchValue = (data.name || data.id || '').toString().replace(/"/g, '\\"').replace(/'/g, "\\'");
+        const invSearchValue = (data.Name || data.name || data.id || '').toString().replace(/"/g, '\\"').replace(/'/g, "\\'");
         filter = `{Name}="${invSearchValue}"`;
       } else if (data.id) {
         filter = `{id}="${searchValue}"`;
