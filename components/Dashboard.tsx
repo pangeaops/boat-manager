@@ -134,50 +134,60 @@ const Dashboard: React.FC<DashboardProps> = ({ data, onSendFullDailyReport, isSy
       {activeMissions.length > 0 && (
         <section className="space-y-6">
           <h3 className="text-xs font-black uppercase text-indigo-600 tracking-[0.3em] flex items-center gap-2">
-            <span className="animate-pulse">🌊</span> Current Missions
+            <span className="text-indigo-400">🌊</span> CURRENT MISSIONS
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {activeMissions.map((tour) => {
-              const boat = data.boats.find(b => b.id === tour.boatId || b.airtableRecordId === tour.boatId);
-              const captain = data.personnel.find(p => p.id === tour.captainId || p.airtableRecordId === tour.captainId);
+              // Linked records in Airtable use the record ID string
+              const boat = data.boats.find(b => b.airtableRecordId === tour.boatId || b.id === tour.boatId);
+              const captain = data.personnel.find(p => p.airtableRecordId === tour.captainId || p.id === tour.captainId);
               const matesNames = (tour.mates || [])
-                .map(mId => data.personnel.find(p => p.id === mId || p.airtableRecordId === mId)?.name)
+                .map(mId => data.personnel.find(p => p.airtableRecordId === mId || p.id === mId)?.name)
                 .filter(Boolean);
 
               return (
-                <div key={tour.id} className="bg-white p-6 rounded-[2.5rem] border-2 border-indigo-100 shadow-md relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 bg-indigo-600 text-white px-6 py-1 font-black text-[8px] uppercase tracking-widest">
-                    Live
+                <div key={tour.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-md relative overflow-hidden group">
+                  {/* Status Badge */}
+                  <div className="absolute top-0 right-0">
+                    <div className="bg-indigo-600 text-white px-8 py-1.5 font-black text-[10px] uppercase tracking-widest rounded-bl-3xl">
+                      LIVE
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-xl shadow-inner">
+
+                  {/* Header: Boat Icon & Name */}
+                  <div className="flex items-center gap-5 mb-8">
+                    <div className="w-16 h-16 rounded-[1.25rem] bg-[#eff6ff] flex items-center justify-center text-3xl shadow-inner">
                       🛥️
                     </div>
-                    <div>
-                      <h4 className="font-black text-slate-900 leading-none">{boat?.boatname || 'Unidentified Vessel'}</h4>
-                      <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-1">{tour.route}</p>
+                    <div className="flex flex-col">
+                      <h4 className="font-black text-2xl text-slate-900 leading-none">{boat?.boatname || 'Unidentified Vessel'}</h4>
+                      <p className="text-[11px] font-black text-indigo-500 uppercase tracking-widest mt-1.5">{tour.route || 'Tour Routing'}</p>
                     </div>
                   </div>
-                  <div className="space-y-3">
-                    <div className="flex justify-between border-b border-slate-50 pb-2">
-                      <span className="text-[9px] font-black text-slate-400 uppercase">Captain</span>
-                      <span className="text-[11px] font-black text-slate-800">{captain?.name || 'Pending...'}</span>
+
+                  {/* Details: Captain & Crew */}
+                  <div className="space-y-4 mb-8">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">CAPTAIN</span>
+                      <span className="text-sm font-black text-slate-800">{captain?.name || 'Pending...'}</span>
                     </div>
-                    {matesNames.length > 0 && (
-                      <div className="flex justify-between border-b border-slate-50 pb-2">
-                        <span className="text-[9px] font-black text-slate-400 uppercase">Crew</span>
-                        <span className="text-[11px] font-bold text-slate-700 text-right truncate ml-4">{matesNames.join(', ')}</span>
-                      </div>
-                    )}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-slate-50 p-3 rounded-2xl">
-                        <span className="text-[8px] font-black text-slate-400 uppercase block">Guests</span>
-                        <span className="text-xl font-black text-slate-900">{tour.paxCount} PAX</span>
-                      </div>
-                      <div className="bg-slate-50 p-3 rounded-2xl">
-                        <span className="text-[8px] font-black text-slate-400 uppercase block">Left Base</span>
-                        <span className="text-xl font-black text-slate-900">{tour.departureTime}</span>
-                      </div>
+                    <div className="flex items-start justify-between">
+                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">CREW</span>
+                      <span className="text-sm font-black text-slate-800 text-right truncate ml-6 leading-tight flex-1">
+                        {matesNames.length > 0 ? matesNames.join(', ') : 'No Mates Assigned'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Stats Bubbles */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-slate-50 p-4 rounded-3xl">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">GUESTS</span>
+                      <span className="text-xl font-black text-slate-900">{tour.paxCount} PAX</span>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-3xl">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">LEFT BASE</span>
+                      <span className="text-xl font-black text-slate-900">{tour.departureTime}</span>
                     </div>
                   </div>
                 </div>
